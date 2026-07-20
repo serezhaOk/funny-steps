@@ -1,0 +1,345 @@
+:root {
+  --bg: #0a0a0f;
+  --panel: #12121c;
+  --text: #d6ffd6;
+  --dim: #4a4a5e;
+  --c-chop: #aaff00;
+  --c-grain: #ff2bd6;
+  --c-wave: #00e5ff;
+  --accent: var(--c-chop);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Courier New', monospace;
+  overscroll-behavior: none;
+}
+
+/* ---- boot overlay ---- */
+#boot {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: radial-gradient(circle at 50% 30%, #1a0a2a 0%, var(--bg) 70%);
+  z-index: 10;
+}
+#boot[hidden] {
+  display: none;
+}
+.boot-title {
+  font-size: 2rem;
+  font-weight: bold;
+  letter-spacing: 0.15em;
+  text-shadow: 0 0 18px var(--c-grain);
+}
+.boot-title span,
+.logo span {
+  color: var(--c-chop);
+}
+.boot-sub {
+  color: var(--dim);
+  letter-spacing: 0.3em;
+  font-size: 0.7rem;
+}
+#boot-btn {
+  margin-top: 24px;
+  padding: 18px 42px;
+  font: bold 1.1rem 'Courier New', monospace;
+  color: var(--bg);
+  background: var(--c-chop);
+  border: none;
+  border-radius: 4px;
+  box-shadow: 0 0 28px var(--c-chop);
+  animation: pulse 1.2s infinite alternate;
+}
+@keyframes pulse {
+  to {
+    box-shadow: 0 0 48px var(--c-grain);
+  }
+}
+
+/* ---- layout ---- */
+#app {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 10px 10px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.logo {
+  font-weight: bold;
+  letter-spacing: 0.12em;
+  font-size: 1.05rem;
+  text-shadow: 0 0 10px var(--c-grain);
+}
+.play-btn {
+  width: 64px;
+  height: 44px;
+  font-size: 1.2rem;
+  background: var(--panel);
+  color: var(--c-chop);
+  border: 1px solid var(--c-chop);
+  border-radius: 4px;
+}
+.play-btn.playing {
+  background: var(--c-chop);
+  color: var(--bg);
+  box-shadow: 0 0 18px var(--c-chop);
+}
+
+.transport {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  font-size: 0.62rem;
+  color: var(--dim);
+}
+.transport label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  letter-spacing: 0.1em;
+}
+.chaos-btn {
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--c-grain);
+  border: 1px solid var(--c-grain);
+  border-radius: 4px;
+  font: bold 0.7rem 'Courier New', monospace;
+}
+.chaos-btn:active {
+  background: var(--c-grain);
+  color: var(--bg);
+}
+
+/* ---- track tabs ---- */
+#tracks {
+  display: flex;
+  gap: 6px;
+}
+#tracks button {
+  flex: 1;
+  padding: 10px 0;
+  font: bold 0.8rem 'Courier New', monospace;
+  letter-spacing: 0.15em;
+  background: var(--panel);
+  color: var(--dim);
+  border: 1px solid #222;
+  border-radius: 4px;
+}
+#tracks button.active {
+  color: var(--bg);
+  background: var(--accent);
+  box-shadow: 0 0 14px var(--accent);
+}
+
+/* ---- step grid ---- */
+#grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+}
+.pad {
+  aspect-ratio: 1;
+  border-radius: 5px;
+  border: 1px solid #26263a;
+  background: var(--panel);
+  position: relative;
+}
+.pad.beat {
+  border-color: #3a3a55;
+}
+.pad.on {
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+.pad.locked::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 6px #fff;
+}
+.pad.editing {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.pad.playhead {
+  filter: brightness(2.2);
+  border-color: #fff;
+}
+
+/* ---- sample tools ---- */
+#wave {
+  width: 100%;
+  height: 64px;
+  background: var(--panel);
+  border-radius: 4px;
+  display: block;
+}
+.sample-btns {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.sample-btns button {
+  flex: 1;
+  padding: 10px 0;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid #333;
+  border-radius: 4px;
+  font: bold 0.72rem 'Courier New', monospace;
+}
+#rec.recording {
+  color: #ff3b3b;
+  border-color: #ff3b3b;
+  animation: pulse-rec 0.7s infinite alternate;
+}
+@keyframes pulse-rec {
+  to {
+    background: #3a0a0a;
+  }
+}
+
+/* ---- params ---- */
+#params,
+#fx {
+  background: var(--panel);
+  border: 1px solid #202032;
+  border-radius: 6px;
+  padding: 10px;
+}
+.params-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.68rem;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+#clear-lock {
+  background: transparent;
+  color: #fff;
+  border: 1px solid #555;
+  border-radius: 3px;
+  padding: 4px 8px;
+  font: 0.62rem 'Courier New', monospace;
+}
+#sliders label,
+#fx label,
+#step-extras label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.62rem;
+  color: var(--dim);
+  letter-spacing: 0.1em;
+  margin: 7px 0;
+}
+#sliders label > span,
+#step-extras label > span {
+  color: var(--text);
+  min-width: 38px;
+  text-align: right;
+}
+#sliders label {
+  color: var(--text);
+}
+#sliders .lbl {
+  min-width: 52px;
+  color: var(--dim);
+}
+
+input[type='range'] {
+  flex: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  height: 26px;
+  background: transparent;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  background: #2a2a40;
+  border-radius: 2px;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+input[type='range']::-moz-range-track {
+  height: 4px;
+  background: #2a2a40;
+  border-radius: 2px;
+}
+input[type='range']::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.retrig {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.62rem;
+  color: var(--dim);
+  letter-spacing: 0.1em;
+}
+.retrig button {
+  width: 40px;
+  height: 34px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid #333;
+  border-radius: 4px;
+  font: bold 0.8rem 'Courier New', monospace;
+}
+.retrig button.active {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.fx-title {
+  font-size: 0.68rem;
+  letter-spacing: 0.15em;
+  color: var(--c-wave);
+  margin-bottom: 6px;
+}
