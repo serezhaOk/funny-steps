@@ -19,9 +19,10 @@ export const SCALES: Scale[] = [
 
 export const COLS = 10;
 
-// Reference pitch that plays a sample at its natural speed (playbackRate 1).
-const REF_MIDI = 60; // C4
-// Root sits low enough that the 10 notes stay in a musical, low-shift range.
+// Samples are recorded in C, so a column whose pitch equals the sample's base
+// note (default C4 = 60) plays at natural speed.
+const DEFAULT_BASE = 60; // C4
+// Root sits low enough that the 10 notes stay in a musical range.
 const ROOT_BASE = 48; // C3
 
 // MIDI note for a given column, root pitch class and scale.
@@ -32,14 +33,26 @@ export function columnMidi(col: number, rootPc: number, scale: Scale): number {
   return ROOT_BASE + rootPc + offset;
 }
 
-// Playback rate to pitch a sample to that column (clamped to +/- one octave
-// so shifted samples keep their character).
-export function columnRate(col: number, rootPc: number, scale: Scale): number {
+// Playback rate to pitch a sample (base note = baseMidi) to that column.
+// No octave clamp: since the samples are tuned to C, every column plays true
+// pitch (only guarded against pathological extremes).
+export function columnRate(
+  col: number,
+  rootPc: number,
+  scale: Scale,
+  baseMidi = DEFAULT_BASE
+): number {
   const midi = columnMidi(col, rootPc, scale);
-  const rate = Math.pow(2, (midi - REF_MIDI) / 12);
-  return Math.min(2, Math.max(0.5, rate));
+  const rate = Math.pow(2, (midi - baseMidi) / 12);
+  return Math.min(4, Math.max(0.25, rate));
 }
 
-export function rateTable(rootPc: number, scale: Scale): number[] {
-  return Array.from({ length: COLS }, (_, c) => columnRate(c, rootPc, scale));
+export function rateTable(
+  rootPc: number,
+  scale: Scale,
+  baseMidi = DEFAULT_BASE
+): number[] {
+  return Array.from({ length: COLS }, (_, c) =>
+    columnRate(c, rootPc, scale, baseMidi)
+  );
 }

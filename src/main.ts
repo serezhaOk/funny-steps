@@ -16,8 +16,13 @@ let scaleIdx = 0; // minor
 let sampleIdx = 0; // kalimbox
 let eraseMode = false;
 let buffer: AudioBuffer | null = null;
-let rates = rateTable(rootPc, SCALES[scaleIdx]);
+let rates: number[] = [];
 let uiStep = -1;
+
+function updateRates(): void {
+  rates = rateTable(rootPc, SCALES[scaleIdx], SAMPLES[sampleIdx].baseMidi);
+}
+updateRates();
 
 // ------------------------------------------------------------------ boot ----
 $('#boot-btn').addEventListener('click', async () => {
@@ -87,20 +92,20 @@ function frame(): void {
 function wire(): void {
   // paint / erase on the grid
   let painting = false;
-  let last = '';
   const apply = (e: PointerEvent) => {
     const rect = canvas.getBoundingClientRect();
-    const hit = grid.hit(e.clientX - rect.left, e.clientY - rect.top);
-    if (!hit) return;
-    const key = `${hit.r},${hit.c}`;
-    if (key === last) return;
-    last = key;
-    if (eraseMode) grid.erase(hit.r, hit.c);
-    else grid.paint(hit.r, hit.c);
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (eraseMode) {
+      const hit = grid.hit(x, y);
+      if (hit) grid.erase(hit.r, hit.c);
+    } else {
+      const p = grid.pos(x, y);
+      if (p) grid.brush(p.gx, p.gy);
+    }
   };
   canvas.addEventListener('pointerdown', (e) => {
     painting = true;
-    last = '';
     canvas.setPointerCapture(e.pointerId);
     apply(e);
   });
@@ -141,12 +146,12 @@ function wire(): void {
 
   $('#root').addEventListener('click', () => {
     rootPc = (rootPc + 1) % 12;
-    rates = rateTable(rootPc, SCALES[scaleIdx]);
+    updateRates();
     refreshLabels();
   });
   $('#scale').addEventListener('click', () => {
     scaleIdx = (scaleIdx + 1) % SCALES.length;
-    rates = rateTable(rootPc, SCALES[scaleIdx]);
+    updateRates();
     refreshLabels();
   });
 
@@ -165,6 +170,7 @@ async function cycleSample(): Promise<void> {
   refreshLabels();
   try {
     buffer = await audio.load(SAMPLES[sampleIdx].file);
+    updateRates();
   } finally {
     el.classList.remove('loading');
   }

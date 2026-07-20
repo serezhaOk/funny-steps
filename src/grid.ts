@@ -31,13 +31,33 @@ export class Grid {
     if (this.cells[i] < v) this.cells[i] = v;
   }
 
-  // Center tap: full accent here, soft bleed to the four neighbours.
-  paint(r: number, c: number): void {
-    this.set(r, c, 1);
-    this.bleed(r - 1, c, 0.5);
-    this.bleed(r + 1, c, 0.5);
-    this.bleed(r, c - 1, 0.5);
-    this.bleed(r, c + 1, 0.5);
+  // Organic brush driven by the finger's fractional position. The cell under
+  // the finger goes full; neighbours bleed in proportion to how close the
+  // finger is to that edge, so a drag leaves a soft directional trail.
+  brush(gx: number, gy: number): void {
+    const c = Math.floor(gx);
+    const r = Math.floor(gy);
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+    const fx = gx - c - 0.5; // -0.5..0.5 from cell centre
+    const fy = gy - r - 0.5;
+    const sx = fx >= 0 ? 1 : -1;
+    const sy = fy >= 0 ? 1 : -1;
+    const wx = Math.min(1, Math.abs(fx) * 2);
+    const wy = Math.min(1, Math.abs(fy) * 2);
+    const B = 0.9;
+    this.bleed(r, c, 1);
+    this.bleed(r, c + sx, wx * B);
+    this.bleed(r + sy, c, wy * B);
+    this.bleed(r + sy, c + sx, wx * wy * B);
+  }
+
+  // Softer symmetric stamp used by the randomizer.
+  private stamp(r: number, c: number): void {
+    this.bleed(r, c, 1);
+    this.bleed(r - 1, c, 0.45);
+    this.bleed(r + 1, c, 0.45);
+    this.bleed(r, c - 1, 0.45);
+    this.bleed(r, c + 1, 0.45);
   }
 
   // Eraser clears a 2x2 block anchored so it always stays on the grid.
@@ -59,21 +79,28 @@ export class Grid {
     this.clear();
     for (let r = 0; r < ROWS; r++) {
       if (Math.random() < 0.42) {
-        this.paint(r, Math.floor(Math.random() * COLS));
+        this.stamp(r, Math.floor(Math.random() * COLS));
         if (Math.random() < 0.25) {
-          this.paint(r, Math.floor(Math.random() * COLS));
+          this.stamp(r, Math.floor(Math.random() * COLS));
         }
       }
     }
   }
 
+  // Integer cell under a canvas point (for the eraser).
   hit(x: number, y: number): { r: number; c: number } | null {
+    const p = this.pos(x, y);
+    return p ? { r: Math.floor(p.gy), c: Math.floor(p.gx) } : null;
+  }
+
+  // Fractional grid coordinates (cell units) under a canvas point.
+  pos(x: number, y: number): { gx: number; gy: number } | null {
     const { cell, ox, oy } = this.layout;
     if (cell <= 0) return null;
-    const c = Math.floor((x - ox) / cell);
-    const r = Math.floor((y - oy) / cell);
-    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return null;
-    return { r, c };
+    const gx = (x - ox) / cell;
+    const gy = (y - oy) / cell;
+    if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) return null;
+    return { gx, gy };
   }
 
   render(
