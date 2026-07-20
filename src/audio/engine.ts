@@ -7,7 +7,8 @@ import crusherUrl from './worklets/crusher-processor.js?url';
 export class AudioEngine {
   ctx!: AudioContext;
   masterBus!: GainNode;
-  crusher!: AudioWorkletNode;
+  crusher: AudioWorkletNode | null = null;
+  hasCrusher = false;
   delayIn!: GainNode;
   private started = false;
 
@@ -19,12 +20,8 @@ export class AudioEngine {
     this.ctx = new AudioContext({ latencyHint: 'interactive' });
     await this.ctx.resume(); // must happen inside a user gesture on iOS
 
-    await this.ctx.audioWorklet.addModule(crusherUrl);
-
     this.masterBus = this.ctx.createGain();
     this.masterBus.gain.value = 0.85;
-
-    this.crusher = new AudioWorkletNode(this.ctx, 'crusher-processor');
 
     const limiter = this.ctx.createDynamicsCompressor();
     limiter.threshold.value = -6;
@@ -33,8 +30,18 @@ export class AudioEngine {
     limiter.attack.value = 0.002;
     limiter.release.value = 0.15;
 
-    this.masterBus.connect(this.crusher);
-    this.crusher.connect(limiter);
+    // The bitcrusher is an AudioWorklet; some mobile browsers block/loading it
+    // can fail. Keep it optional so the sequencer still plays without it.
+    try {
+      await this.ctx.audioWorklet.addModule(crusherUrl);
+      this.crusher = new AudioWorkletNode(this.ctx, 'crusher-processor');
+      this.masterBus.connect(this.crusher);
+      this.crusher.connect(limiter);
+      this.hasCrusher = true;
+    } catch {
+      this.masterBus.connect(limiter);
+      this.hasCrusher = false;
+    }
     limiter.connect(this.ctx.destination);
 
     // Dub delay send: delay with filtered feedback loop.
@@ -65,7 +72,8 @@ export class AudioEngine {
   }
 
   setCrush(bits: number, reduction: number, wet: number): void {
-    const p = (name: string) => this.crusher.parameters.get(name)!;
+    if (!this.crusher) return;
+    const p = (name: string) => this.crusher!.parameters.get(name)!;
     p('bits').value = bits;
     p('reduction').value = reduction;
     p('wet').value = wet;

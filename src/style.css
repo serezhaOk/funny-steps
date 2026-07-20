@@ -42,6 +42,22 @@ body {
 #boot[hidden] {
   display: none;
 }
+#boot-err {
+  max-width: 90vw;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: #2a0a0a;
+  border: 1px solid #ff3b3b;
+  border-radius: 4px;
+  color: #ff9b9b;
+  font-size: 0.62rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+  overflow: auto;
+  max-height: 45vh;
+}
 .boot-title {
   font-size: 2rem;
   font-weight: bold;

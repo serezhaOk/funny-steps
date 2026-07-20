@@ -35,17 +35,25 @@ function queueSave(): void {
 
 // ------------------------------------------------------------------ boot ----
 $('#boot-btn').addEventListener('click', async () => {
-  await engine.start();
-  seq = new Sequencer(engine, pattern);
-  const brk = makeDefaultBreak(engine.ctx);
-  seq.chopper.setBuffer(brk);
-  seq.granular.setBuffer(brk);
-  seq.onStep = onStep;
-  $('#boot').hidden = true;
-  $('#app').hidden = false;
-  renderAll();
-  seq.start();
-  $('.play-btn').classList.add('playing');
+  const btn = $('#boot-btn');
+  btn.textContent = 'STARTING…';
+  try {
+    await engine.start();
+    seq = new Sequencer(engine, pattern);
+    const brk = makeDefaultBreak(engine.ctx);
+    seq.chopper.setBuffer(brk);
+    seq.granular.setBuffer(brk);
+    seq.onStep = onStep;
+    $('#boot').hidden = true;
+    $('#app').hidden = false;
+    renderAll();
+    seq.start();
+    $('.play-btn').classList.add('playing');
+  } catch (err) {
+    btn.textContent = 'TAP TO START';
+    const w = window as unknown as { __bootErr?: (m: unknown) => void };
+    w.__bootErr?.(err instanceof Error ? `${err.name}: ${err.message}` : err);
+  }
 });
 
 // ------------------------------------------------------------- transport ----

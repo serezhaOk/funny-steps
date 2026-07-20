@@ -15,7 +15,25 @@
       <div class="boot-title">FUNNY<span>⚡</span>STEPS</div>
       <div class="boot-sub">granular · chop · wavetable</div>
       <button id="boot-btn">TAP TO START</button>
+      <pre id="boot-err" hidden></pre>
     </div>
+    <script>
+      // Surface any startup error on screen (mobile has no console).
+      window.__bootErr = function (m) {
+        var e = document.getElementById('boot-err');
+        if (e) {
+          e.textContent = String(m);
+          e.hidden = false;
+        }
+      };
+      window.addEventListener('error', function (ev) {
+        window.__bootErr((ev.error && ev.error.stack) || ev.message);
+      });
+      window.addEventListener('unhandledrejection', function (ev) {
+        var r = ev.reason;
+        window.__bootErr('promise: ' + ((r && (r.stack || r.message)) || r));
+      });
+    </script>
     <div id="app" hidden>
       <header>
         <div class="logo">FUNNY<span>⚡</span>STEPS</div>

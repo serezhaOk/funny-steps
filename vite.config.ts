@@ -9,5 +9,9 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
+    // Never inline the AudioWorklet as a data: URL — some mobile browsers
+    // refuse addModule() on data URLs. Emit it as a real same-origin file.
+    assetsInlineLimit: (filePath: string) =>
+      filePath.includes('worklet') ? false : undefined,
   },
 });
