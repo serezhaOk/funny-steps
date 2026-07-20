@@ -1,0 +1,107 @@
+// Audio engine: sample loading/caching, one-shot playback with a short
+// envelope, and a lookahead transport that ticks 16 steps in a loop.
+
+const LOOKAHEAD_MS = 25;
+const AHEAD_S = 0.12;
+
+export class Audio {
+  ctx!: AudioContext;
+  private master!: GainNode;
+  private cache = new Map<string, AudioBuffer>();
+  private started = false;
+
+  async start(): Promise<void> {
+    if (this.started) {
+      if (this.ctx.state !== 'running') await this.ctx.resume();
+      return;
+    }
+    this.ctx = new AudioContext({ latencyHint: 'interactive' });
+    await this.ctx.resume(); // inside the user gesture (iOS)
+
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.9;
+    const limiter = this.ctx.createDynamicsCompressor();
+    limiter.threshold.value = -8;
+    limiter.ratio.value = 12;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.18;
+    this.master.connect(limiter);
+    limiter.connect(this.ctx.destination);
+    this.started = true;
+  }
+
+  get now(): number {
+    return this.ctx.currentTime;
+  }
+
+  async load(file: string): Promise<AudioBuffer> {
+    const cached = this.cache.get(file);
+    if (cached) return cached;
+    const url = `${import.meta.env.BASE_URL}samples/${file}`;
+    const res = await fetch(url);
+    const buf = await this.ctx.decodeAudioData(await res.arrayBuffer());
+    this.cache.set(file, buf);
+    return buf;
+  }
+
+  // Fire a pitched one-shot with a soft attack/decay so retriggers stay clean.
+  trigger(buffer: AudioBuffer, rate: number, gain: number, time: number): void {
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = rate;
+
+    const env = this.ctx.createGain();
+    const rel = Math.min(1.5, buffer.duration / rate);
+    env.gain.setValueAtTime(0, time);
+    env.gain.linearRampToValueAtTime(gain, time + 0.006);
+    env.gain.exponentialRampToValueAtTime(0.0008, time + rel);
+
+    src.connect(env);
+    env.connect(this.master);
+    src.start(time);
+    src.stop(time + rel + 0.05);
+  }
+}
+
+export class Transport {
+  bpm = 120;
+  steps = 16;
+  onStep: ((step: number, time: number) => void) | null = null;
+
+  private timer: number | null = null;
+  private nextStep = 0;
+  private nextTime = 0;
+
+  constructor(private audio: Audio) {}
+
+  get playing(): boolean {
+    return this.timer !== null;
+  }
+
+  private stepDur(): number {
+    // 16 steps per bar of 4 beats -> a step is a 16th note.
+    return 60 / this.bpm / 4;
+  }
+
+  start(): void {
+    if (this.timer !== null) return;
+    this.nextStep = 0;
+    this.nextTime = this.audio.now + 0.08;
+    const loop = () => {
+      while (this.nextTime < this.audio.now + AHEAD_S) {
+        this.onStep?.(this.nextStep, this.nextTime);
+        this.nextTime += this.stepDur();
+        this.nextStep = (this.nextStep + 1) % this.steps;
+      }
+      this.timer = window.setTimeout(loop, LOOKAHEAD_MS);
+    };
+    loop();
+  }
+
+  stop(): void {
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+  }
+}

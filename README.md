@@ -1,44 +1,35 @@
 # FUNNY⚡STEPS
 
-Mobile-first experimental step sequencer for the browser. Granular clouds,
-sample chopping and morphing wavetable acid — pure Web Audio, no audio
-frameworks.
+A mobile-first note-matrix sequencer for the browser. Paint notes into a
+**10 × 16** grid — 10 scale notes across, 16 steps down — and they loop,
+pitch-mapped across your own samples. Pure Web Audio, no audio frameworks.
 
-## Tracks
+Live: https://serezhaok.github.io/funny-steps/
 
-- **CHOP** — sample chopper: the loaded sample is cut into 16 slices; each step
-  picks a slice with pitch, decay, reverse and delay send.
-- **GRAIN** — granular sampler: bursts of tiny grains (position / size /
-  density / spray / pitch) read from anywhere in the sample. Time-stretch
-  textures, Aphex-style smears.
-- **WAVE** — morphing wavetable synth (sine → saw → square → gritty hybrid)
-  through a resonant lowpass with filter envelope. The acid department.
+## How it works
 
-## Sequencer
-
-16 steps, lookahead scheduling ("A Tale of Two Clocks"), swing, and
-Elektron-style **p-locks**: long-press a pad to lock any parameter value,
-probability, or 2/3/4-hit retrig to that single step. Tap to toggle. 🎲 CHAOS
-randomizes the current track.
-
-## Samples
-
-Each sample track can load an audio file or record from the microphone. A
-procedurally synthesized break is loaded by default so the machine talks
-immediately.
-
-## Master FX
-
-Bitcrusher + sample-rate reducer (custom AudioWorklet) and a dub delay with
-filtered feedback. Patterns auto-save to localStorage.
+- **Grid** — each column is a note of the current scale, each row is a step.
+  The sequencer loops top→bottom; every filled cell in the current step plays.
+- **Intensity / accents** — tap a cell for a bright **accent** (full velocity);
+  its four neighbours get a soft, smaller **bleed** (half velocity). Bigger &
+  brighter = louder.
+- **ERASE** — toggles an eraser that clears a 2×2 block per touch.
+- **RNDM** — scatters accents within the current key and tempo.
+- **BPM** — drag left/right to scrub tempo (tap to bump).
+- **Key** — tap the note to change root, tap the scale name to cycle
+  minor / major / dorian / penta / phrygian.
+- **Sample** — tap the centre label to cycle through the built-in set; each
+  sample is pitch-shifted per column (`public/samples/`, loaded on demand).
 
 ## Dev
 
 ```sh
 npm install
-npm run dev      # dev server (add --host for phone on the same network)
+npm run dev      # add --host to reach it from a phone on the same network
 npm run build    # typecheck + production build
 CHROMIUM_PATH=/path/to/chromium node scripts/smoke.mjs   # headless smoke test
 ```
 
-Audio starts only after the TAP TO START gesture (iOS autoplay policy).
+Deploys to GitHub Pages on every push to `main`
+(`.github/workflows/deploy.yml`). Audio starts only after the TAP TO START
+gesture (iOS autoplay policy).

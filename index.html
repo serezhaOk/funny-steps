@@ -4,27 +4,41 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#0a0a0f" />
+    <meta name="theme-color" content="#000000" />
     <title>FUNNY STEPS</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◼</text></svg>" />
   </head>
   <body>
     <div id="boot">
-      <div class="boot-title">FUNNY<span>⚡</span>STEPS</div>
-      <div class="boot-sub">granular · chop · wavetable</div>
+      <div class="boot-grid" aria-hidden="true"></div>
       <button id="boot-btn">TAP TO START</button>
       <pre id="boot-err" hidden></pre>
     </div>
+
+    <div id="app" hidden>
+      <header>
+        <button id="bpm" class="lbl">120 BPM</button>
+        <div class="key">
+          <button id="root" class="lbl">A</button>
+          <button id="scale" class="lbl">MINOR</button>
+        </div>
+      </header>
+      <canvas id="grid"></canvas>
+      <footer>
+        <button id="erase" class="lbl">ERASE</button>
+        <button id="sample" class="lbl">KALIMBOX</button>
+        <button id="rndm" class="lbl">RNDM</button>
+      </footer>
+      <div class="home" aria-hidden="true"></div>
+    </div>
+
     <script>
       // Surface any startup error on screen (mobile has no console).
       window.__bootErr = function (m) {
         var e = document.getElementById('boot-err');
-        if (e) {
-          e.textContent = String(m);
-          e.hidden = false;
-        }
+        if (e) { e.textContent = String(m); e.hidden = false; }
       };
       window.addEventListener('error', function (ev) {
         window.__bootErr((ev.error && ev.error.stack) || ev.message);
@@ -34,57 +48,6 @@
         window.__bootErr('promise: ' + ((r && (r.stack || r.message)) || r));
       });
     </script>
-    <div id="app" hidden>
-      <header>
-        <div class="logo">FUNNY<span>⚡</span>STEPS</div>
-        <button id="play" class="play-btn">▶</button>
-      </header>
-      <div class="transport">
-        <label>BPM <span id="bpm-val"></span>
-          <input id="bpm" type="range" min="60" max="220" step="1" />
-        </label>
-        <label>SWING <span id="swing-val"></span>
-          <input id="swing" type="range" min="0" max="0.5" step="0.01" />
-        </label>
-        <button id="chaos" class="chaos-btn">🎲 CHAOS</button>
-      </div>
-      <nav id="tracks"></nav>
-      <div id="grid"></div>
-      <div id="sample-tools">
-        <canvas id="wave"></canvas>
-        <div class="sample-btns">
-          <button id="rec">● REC</button>
-          <button id="load">📁 LOAD</button>
-          <input id="file" type="file" accept="audio/*" hidden />
-        </div>
-      </div>
-      <div id="params">
-        <div class="params-head">
-          <span id="params-title"></span>
-          <button id="clear-lock" hidden>✕ CLEAR LOCK</button>
-        </div>
-        <div id="sliders"></div>
-        <div id="step-extras" hidden>
-          <label>PROB <span id="prob-val"></span>
-            <input id="prob" type="range" min="0.1" max="1" step="0.05" />
-          </label>
-          <div class="retrig">
-            RETRIG
-            <button data-r="1">1</button>
-            <button data-r="2">2</button>
-            <button data-r="3">3</button>
-            <button data-r="4">4</button>
-          </div>
-        </div>
-      </div>
-      <div id="fx">
-        <div class="fx-title">MASTER FX</div>
-        <label>CRUSH <input id="fx-crush" type="range" min="0" max="1" step="0.01" value="0" /></label>
-        <label>BITS <input id="fx-bits" type="range" min="1" max="16" step="1" value="8" /></label>
-        <label>DLY TIME <input id="fx-dtime" type="range" min="0.03" max="0.8" step="0.01" value="0.24" /></label>
-        <label>DLY FB <input id="fx-dfb" type="range" min="0" max="0.92" step="0.01" value="0.45" /></label>
-      </div>
-    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
