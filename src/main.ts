@@ -1,8 +1,9 @@
 import './style.css';
 import { Audio, Transport } from './audio';
 import { Grid } from './grid';
-import { COLS, NOTE_NAMES, SCALES, rateTable } from './scales';
-import { SAMPLES } from './samples';
+import { COLS, NOTE_NAMES, SCALES, columnMidi, rateTable } from './scales';
+import { SAMPLES, type SampleDef } from './samples';
+import { Dream } from './dream';
 
 const $ = <T extends HTMLElement>(sel: string) =>
   document.querySelector(sel) as T;
@@ -10,17 +11,35 @@ const $ = <T extends HTMLElement>(sel: string) =>
 const audio = new Audio();
 const transport = new Transport(audio);
 const grid = new Grid();
+const dream = new Dream();
+
+// The sound cycle: every sample plus the REVERIE dream-synth.
+type Voice = { kind: 'sample'; def: SampleDef } | { kind: 'dream' };
+const VOICES: Voice[] = [
+  { kind: 'sample', def: SAMPLES[0] },
+  { kind: 'dream' },
+  ...SAMPLES.slice(1).map((def): Voice => ({ kind: 'sample', def })),
+];
+const voiceLabel = (v: Voice) => (v.kind === 'dream' ? 'REVERIE' : v.def.label);
 
 let rootPc = 9; // A
 let scaleIdx = 0; // minor
-let sampleIdx = 0; // kalimbox
+let voiceIdx = 0; // kalimbox
 let eraseMode = false;
 let buffer: AudioBuffer | null = null;
 let rates: number[] = [];
+let midis: number[] = [];
 let uiStep = -1;
 
+const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+
 function updateRates(): void {
-  rates = rateTable(rootPc, SCALES[scaleIdx], SAMPLES[sampleIdx].baseMidi);
+  const v = VOICES[voiceIdx];
+  const base = v.kind === 'sample' ? v.def.baseMidi : undefined;
+  rates = rateTable(rootPc, SCALES[scaleIdx], base);
+  midis = Array.from({ length: COLS }, (_, c) =>
+    columnMidi(c, rootPc, SCALES[scaleIdx])
+  );
 }
 updateRates();
 
@@ -30,7 +49,7 @@ $('#boot-btn').addEventListener('click', async () => {
   btn.textContent = 'LOADING…';
   try {
     await audio.start();
-    buffer = await audio.load(SAMPLES[sampleIdx].file);
+    buffer = await audio.load(SAMPLES[0].file);
     $('#boot').hidden = true;
     $('#app').hidden = false;
     wire();
@@ -52,11 +71,26 @@ $('#boot-btn').addEventListener('click', async () => {
 });
 
 // -------------------------------------------------------------- sequencer ----
+// Random within the frame: full accents always fire; soft bleed cells fire
+// with a probability tied to their intensity, and every hit is humanized
+// (random release 10–90%, micro-detune, velocity shimmer).
 function onStep(step: number, time: number): void {
-  if (buffer) {
-    for (let c = 0; c < COLS; c++) {
-      const v = grid.at(step, c);
-      if (v > 0) audio.trigger(buffer, rates[c], v * 0.9, time);
+  const voice = VOICES[voiceIdx];
+  const dreaming = voice.kind === 'dream' && dream.isReady;
+  if (dreaming) dream.tick(step, transport.bpm);
+
+  for (let c = 0; c < COLS; c++) {
+    const v = grid.at(step, c);
+    if (v <= 0) continue;
+    if (v < 1 && Math.random() > 0.35 + 0.65 * v) continue;
+
+    const vel = v * rnd(0.72, 0.98);
+    if (dreaming) {
+      dream.trigger(midis[c], vel, time);
+    } else if (buffer) {
+      const cents = rnd(-15, 15);
+      const rate = rates[c] * Math.pow(2, cents / 1200);
+      audio.trigger(buffer, rate, vel, time, rnd(0.1, 0.9));
     }
   }
   const delay = Math.max(0, (time - audio.now) * 1000);
@@ -164,12 +198,17 @@ function wire(): void {
 }
 
 async function cycleSample(): Promise<void> {
-  sampleIdx = (sampleIdx + 1) % SAMPLES.length;
+  voiceIdx = (voiceIdx + 1) % VOICES.length;
   const el = $('#sample');
   el.classList.add('loading');
   refreshLabels();
   try {
-    buffer = await audio.load(SAMPLES[sampleIdx].file);
+    const v = VOICES[voiceIdx];
+    if (v.kind === 'dream') {
+      await dream.init(audio.ctx, audio.output);
+    } else {
+      buffer = await audio.load(v.def.file);
+    }
     updateRates();
   } finally {
     el.classList.remove('loading');
@@ -180,5 +219,5 @@ function refreshLabels(): void {
   $('#bpm').textContent = `${transport.bpm} BPM`;
   $('#root').textContent = NOTE_NAMES[rootPc];
   $('#scale').textContent = SCALES[scaleIdx].name.toUpperCase();
-  $('#sample').textContent = SAMPLES[sampleIdx].label;
+  $('#sample').textContent = voiceLabel(VOICES[voiceIdx]);
 }

@@ -34,6 +34,11 @@ export class Audio {
     return this.ctx.currentTime;
   }
 
+  // Master bus (pre-limiter) — external voices route into this.
+  get output(): GainNode {
+    return this.master;
+  }
+
   async load(file: string): Promise<AudioBuffer> {
     const cached = this.cache.get(file);
     if (cached) return cached;
@@ -45,13 +50,20 @@ export class Audio {
   }
 
   // Fire a pitched one-shot with a soft attack/decay so retriggers stay clean.
-  trigger(buffer: AudioBuffer, rate: number, gain: number, time: number): void {
+  // relScale (0..1) scales the tail so no two hits ring identically.
+  trigger(
+    buffer: AudioBuffer,
+    rate: number,
+    gain: number,
+    time: number,
+    relScale = 1
+  ): void {
     const src = this.ctx.createBufferSource();
     src.buffer = buffer;
     src.playbackRate.value = rate;
 
     const env = this.ctx.createGain();
-    const rel = Math.min(1.5, buffer.duration / rate);
+    const rel = Math.max(0.08, Math.min(1.5, buffer.duration / rate) * relScale);
     env.gain.setValueAtTime(0, time);
     env.gain.linearRampToValueAtTime(gain, time + 0.006);
     env.gain.exponentialRampToValueAtTime(0.0008, time + rel);
