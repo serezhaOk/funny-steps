@@ -60,6 +60,7 @@ $('#boot-btn').addEventListener('click', async () => {
     (window as unknown as { __dbg?: unknown }).__dbg = {
       grid,
       transport,
+      audio,
       filled: () => grid.cells.filter((v) => v > 0).length,
       ctx: () => audio.ctx.state,
     };

@@ -7,6 +7,7 @@ const AHEAD_S = 0.12;
 export class Audio {
   ctx!: AudioContext;
   private master!: GainNode;
+  private delayIn!: GainNode;
   private cache = new Map<string, AudioBuffer>();
   private started = false;
 
@@ -27,6 +28,24 @@ export class Audio {
     limiter.release.value = 0.18;
     this.master.connect(limiter);
     limiter.connect(this.ctx.destination);
+
+    // Barely-there space: a quiet, darkened slap delay every sample hit
+    // feeds into. Subtle by design — felt more than heard.
+    this.delayIn = this.ctx.createGain();
+    this.delayIn.gain.value = 0.16;
+    const delay = this.ctx.createDelay(1);
+    delay.delayTime.value = 0.17;
+    const damp = this.ctx.createBiquadFilter();
+    damp.type = 'lowpass';
+    damp.frequency.value = 2400;
+    const feedback = this.ctx.createGain();
+    feedback.gain.value = 0.28;
+    this.delayIn.connect(delay);
+    delay.connect(damp);
+    damp.connect(feedback);
+    feedback.connect(delay);
+    damp.connect(this.master);
+
     this.started = true;
   }
 
@@ -70,6 +89,7 @@ export class Audio {
 
     src.connect(env);
     env.connect(this.master);
+    env.connect(this.delayIn);
     src.start(time);
     src.stop(time + rel + 0.05);
   }

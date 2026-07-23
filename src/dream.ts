@@ -26,7 +26,6 @@ const pick = <T>(xs: readonly T[]): T =>
 export class Dream {
   private ready = false;
   private initing: Promise<void> | null = null;
-  private synth!: Tone.PolySynth<Tone.Synth>;
   private filter!: Tone.Filter;
   private chorus!: Tone.Chorus;
   private delay!: Tone.PingPongDelay;
@@ -53,13 +52,7 @@ export class Dream {
       this.reverb = new Tone.Reverb({ decay: 7, preDelay: 0.02, wet: 0.42 });
       await this.reverb.ready;
 
-      this.synth = new Tone.PolySynth(Tone.Synth, {
-        maxPolyphony: 24,
-        volume: -8,
-        envelope: { attack: 0.01, decay: 0.2, sustain: 0.4, release: 1.5 },
-      } as never);
-
-      this.synth.chain(this.filter, this.chorus, this.delay, this.reverb);
+      this.filter.chain(this.chorus, this.delay, this.reverb);
       // Tone nodes connect happily to native AudioNodes.
       this.reverb.connect(out as unknown as Tone.ToneAudioNode);
       this.ready = true;
@@ -71,40 +64,54 @@ export class Dream {
     return this.ready;
   }
 
-  // One note of the dream. midi comes from the scale grid, vel 0..1.
-  trigger(midi: number, vel: number, time: number): void {
-    if (!this.ready) return;
-
-    // Re-roll the voice character for this note.
-    const release = rnd(0.1, 0.9) * MAX_RELEASE;
-    const attack = Math.random() < 0.3 ? rnd(0.04, 0.35) : rnd(0.004, 0.02);
-    this.synth.set({
+  // A dedicated short-lived synth per note: no shared voice pool to exhaust
+  // or corrupt (a PolySynth ran out of voices under our long releases and
+  // went silent by the second loop). Each note builds, plays and disposes.
+  private note(
+    freq: number,
+    dur: number,
+    time: number,
+    vel: number,
+    release: number
+  ): void {
+    const s = new Tone.Synth({
+      volume: -8,
       oscillator: { type: pick(OSC_TYPES) } as never,
       envelope: {
-        attack,
+        attack: Math.random() < 0.3 ? rnd(0.04, 0.35) : rnd(0.004, 0.02),
         decay: rnd(0.08, 0.5),
         sustain: rnd(0.1, 0.5),
         release,
       },
       detune: rnd(-14, 14),
     });
+    s.connect(this.filter);
+    s.triggerAttackRelease(freq, dur, time, vel);
+    const ttl = time - Tone.now() + dur + release + 0.4;
+    window.setTimeout(() => s.dispose(), Math.max(0, ttl * 1000));
+  }
 
+  // One note of the dream. midi comes from the scale grid, vel 0..1.
+  trigger(midi: number, vel: number, time: number): void {
+    if (!this.ready) return;
     const freq = Tone.Frequency(midi, 'midi').toFrequency();
     const dur = rnd(0.06, 0.3);
-    this.synth.triggerAttackRelease(freq, dur, time, vel);
+    const release = rnd(0.1, 0.9) * MAX_RELEASE;
+    this.note(freq, dur, time, vel, release);
 
     // Ghost sparkle an octave up, slightly late and quiet.
     if (Math.random() < 0.22) {
-      this.synth.triggerAttackRelease(
+      this.note(
         freq * 2,
         dur * 0.6,
         time + rnd(0.02, 0.09),
-        vel * rnd(0.2, 0.45)
+        vel * rnd(0.2, 0.45),
+        release * 0.7
       );
     }
     // Rare sub an octave down for weight.
     if (Math.random() < 0.1) {
-      this.synth.triggerAttackRelease(freq / 2, dur, time, vel * 0.5);
+      this.note(freq / 2, dur, time, vel * 0.5, release);
     }
   }
 
