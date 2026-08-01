@@ -1,7 +1,7 @@
 :root {
   --bg: #000000;
   --ink: #d4cccc;
-  --accent: #d97bff;
+  --accent: #ffffff;
 }
 
 * {
@@ -60,7 +60,7 @@ button {
   color: var(--accent);
   border: 1px solid var(--accent);
   border-radius: 3px;
-  box-shadow: 0 0 26px rgba(217, 123, 255, 0.35);
+  box-shadow: 0 0 26px rgba(255, 255, 255, 0.28);
 }
 #boot-err {
   position: relative;

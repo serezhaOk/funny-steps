@@ -80,6 +80,7 @@ function onStep(step: number, time: number): void {
   const dreaming = voice.kind === 'dream' && dream.isReady;
   if (dreaming) dream.tick(step, transport.bpm);
 
+  const lit: Array<[number, number]> = [];
   for (let c = 0; c < COLS; c++) {
     const v = grid.at(step, c);
     if (v <= 0) continue;
@@ -93,9 +94,14 @@ function onStep(step: number, time: number): void {
       const rate = rates[c] * Math.pow(2, cents / 1200);
       audio.trigger(buffer, rate, vel, time, rnd(0.1, 0.9));
     }
+    lit.push([c, vel]);
   }
+  // Bloom the dots exactly when their sound lands.
   const delay = Math.max(0, (time - audio.now) * 1000);
-  window.setTimeout(() => (uiStep = step), delay);
+  window.setTimeout(() => {
+    uiStep = step;
+    for (const [c, vel] of lit) grid.flash(step, c, vel);
+  }, delay);
 }
 
 // ------------------------------------------------------------------ render ----
@@ -117,9 +123,13 @@ function fitCanvas(): void {
   }
 }
 
-function frame(): void {
+let lastFrame = 0;
+
+function frame(now: number): void {
+  const dt = lastFrame ? Math.min(0.05, (now - lastFrame) / 1000) : 0.016;
+  lastFrame = now;
   fitCanvas();
-  grid.render(ctx, cssW, cssH, uiStep);
+  grid.render(ctx, cssW, cssH, uiStep, dt);
   requestAnimationFrame(frame);
 }
 
