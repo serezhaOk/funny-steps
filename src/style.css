@@ -125,12 +125,95 @@ footer {
   opacity: 0.4;
 }
 
-canvas#grid {
+#stage {
+  position: relative;
   flex: 1 1 auto;
-  width: 100%;
   min-height: 0;
+}
+
+canvas#grid {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   display: block;
   touch-action: none;
+}
+
+/* ---- track view toggle (four dots) ---- */
+#view-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, 7px);
+  gap: 3px;
+  padding: 8px;
+}
+#view-toggle span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink);
+  opacity: 0.45;
+  transition: opacity 0.15s;
+}
+#view-toggle span:first-child {
+  opacity: 1;
+}
+#view-toggle:active span {
+  opacity: 0.8;
+}
+#app.mixer #view-toggle,
+#app.mixer footer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ---- mixer overlay ---- */
+#mixer-ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s;
+}
+#app.mixer #mixer-ui {
+  opacity: 1;
+}
+.slot {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.slot .name {
+  padding: 5px 10px;
+  background: #fff;
+  color: #000;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+.slot .name:active {
+  opacity: 0.7;
+}
+.slot .mute {
+  width: 30px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  background: #000;
+  border: 1px solid #fff;
+  color: #fff;
+  font-size: 0.8rem;
+  line-height: 1;
+  pointer-events: auto;
+}
+.slot .mute.on {
+  background: #fff;
+  color: #000;
+}
+.slot[hidden] {
+  display: none;
 }
 
 .home {

@@ -162,6 +162,12 @@ export class Grid {
     this.cells.fill(0);
   }
 
+  /** True when the track holds any notes at all. */
+  get hasNotes(): boolean {
+    for (let i = 0; i < this.cells.length; i++) if (this.cells[i] > 0) return true;
+    return false;
+  }
+
   // Scatter accents within the scale (columns are already in-key) and tempo.
   random(): void {
     this.clear();
@@ -235,31 +241,32 @@ export class Grid {
    */
   private fitCache = { w: 0, h: 0, cell: 0 };
 
-  private fitCell(cssW: number, cssH: number): number {
+  /** Cell size that keeps the warped grid inside a vw x vh box. */
+  private fitCell(vw: number, vh: number): number {
     const f = this.fitCache;
-    if (f.w === cssW && f.h === cssH && f.cell > 0) return f.cell;
+    if (f.w === vw && f.h === vh && f.cell > 0) return f.cell;
 
-    let cell = Math.min(cssW / COLS, cssH / ROWS);
+    let cell = Math.min(vw / COLS, vh / ROWS);
     for (let pass = 0; pass < 3; pass++) {
       const gw = cell * COLS;
       const gh = cell * ROWS;
-      const ox = (cssW - gw) / 2;
-      const oy = (cssH - gh) / 2;
+      // Measured in box-local coordinates; the caller's offset cancels out.
       this.layout = {
         cell,
-        ox,
-        oy,
-        cx: cssW / 2,
-        cy: cssH / 2,
+        ox: (vw - gw) / 2,
+        oy: (vh - gh) / 2,
+        cx: vw / 2,
+        cy: vh / 2,
         R: Math.hypot(gw, gh) / 2,
       };
+      const { ox, oy } = this.layout;
       // Widest warped extent over the perimeter cells.
       let maxX = 0;
       let maxY = 0;
       const probe = (r: number, c: number) => {
         const [sx, sy] = this.warp(ox + (c + 0.5) * cell, oy + (r + 0.5) * cell);
-        maxX = Math.max(maxX, Math.abs(sx - cssW / 2));
-        maxY = Math.max(maxY, Math.abs(sy - cssH / 2));
+        maxX = Math.max(maxX, Math.abs(sx - vw / 2));
+        maxY = Math.max(maxY, Math.abs(sy - vh / 2));
       };
       for (let r = 0; r < ROWS; r++) {
         probe(r, 0);
@@ -271,14 +278,14 @@ export class Grid {
       }
       const pad = cell * 0.3; // room for the dot + its halo
       const s = Math.min(
-        (cssW / 2 - pad) / Math.max(maxX, 1e-3),
-        (cssH / 2 - pad) / Math.max(maxY, 1e-3),
+        (vw / 2 - pad) / Math.max(maxX, 1e-3),
+        (vh / 2 - pad) / Math.max(maxY, 1e-3),
         1
       );
       if (s > 0.995) break;
       cell *= s;
     }
-    this.fitCache = { w: cssW, h: cssH, cell };
+    this.fitCache = { w: vw, h: vh, cell };
     return cell;
   }
 
@@ -305,26 +312,35 @@ export class Grid {
     return cv;
   }
 
+  /**
+   * Draw the field into the vx,vy,vw,vh box of the canvas. `detail` scales
+   * the expensive extras (halo, streaks) down for small thumbnails, and
+   * `alpha` fades the whole grid during view transitions.
+   */
   render(
     ctx: CanvasRenderingContext2D,
-    cssW: number,
-    cssH: number,
+    vx: number,
+    vy: number,
+    vw: number,
+    vh: number,
     playhead: number,
-    dt: number
+    dt: number,
+    detail = 1,
+    alpha = 1
   ): void {
     this.time += dt;
 
-    const cell = this.fitCell(cssW, cssH);
+    const cell = this.fitCell(vw, vh);
     const gw = cell * COLS;
     const gh = cell * ROWS;
-    const ox = (cssW - gw) / 2;
-    const oy = (cssH - gh) / 2;
+    const ox = vx + (vw - gw) / 2;
+    const oy = vy + (vh - gh) / 2;
     this.layout = {
       cell,
       ox,
       oy,
-      cx: cssW / 2,
-      cy: cssH / 2,
+      cx: vx + vw / 2,
+      cy: vy + vh / 2,
       R: Math.hypot(gw, gh) / 2,
     };
 
@@ -354,10 +370,11 @@ export class Grid {
       }
     }
 
-    ctx.clearRect(0, 0, cssW, cssH);
-
+    // The canvas is cleared by the caller — several grids share it.
     const pushR = PUSH_RADIUS * cell;
     const baseDot = Math.max(1.6, cell * 0.075);
+    const A = Math.max(0, Math.min(1, alpha));
+    if (A <= 0.01) return;
 
     ctx.globalCompositeOperation = 'lighter';
 
@@ -410,13 +427,13 @@ export class Grid {
           const lift = tint ? tint.amp * 0.85 : 0;
           const rad = baseDot * lens * breathe * (1 + lift * 0.6);
           const a = ((onHead ? 0.5 : 0.2) + lift * 0.62) * breathe;
-          ctx.fillStyle = `rgba(${cs},${Math.min(1, a)})`;
+          ctx.fillStyle = `rgba(${cs},${Math.min(1, a) * A})`;
           ctx.beginPath();
           ctx.arc(sx, sy, rad, 0, Math.PI * 2);
           ctx.fill();
-          if (tint && tint.amp > 0.12) {
+          if (tint && tint.amp > 0.12 && detail > 0.5) {
             const gsz = rad * 5;
-            ctx.globalAlpha = Math.min(0.45, tint.amp * 0.5);
+            ctx.globalAlpha = Math.min(0.45, tint.amp * 0.5) * A;
             const sprite = this.glowSprite(tint.rgb);
             ctx.drawImage(sprite, sx - gsz / 2, sy - gsz / 2, gsz, gsz);
             ctx.globalAlpha = 1;
@@ -428,20 +445,21 @@ export class Grid {
         const pulse = 1 + 0.75 * e;
         const rad =
           (baseDot + v * cell * 0.2) * lens * pulse * (0.97 + 0.03 * breathe);
-        const alpha = Math.min(1, 0.4 + 0.45 * v + 0.3 * e);
+        const dotAlpha = Math.min(1, 0.4 + 0.45 * v + 0.3 * e);
 
         // Halo stays tight so a cluster of hits never washes the screen out.
         const gsz = rad * (3 + 2.6 * e);
-        ctx.globalAlpha = Math.min(
-          0.6,
-          0.12 * v + 0.34 * e + 0.05 * swell + (tint ? tint.amp * 0.2 : 0)
-        );
+        ctx.globalAlpha =
+          Math.min(
+            0.6,
+            0.12 * v + 0.34 * e + 0.05 * swell + (tint ? tint.amp * 0.2 : 0)
+          ) * A;
         const sprite = this.glowSprite(tint ? tint.rgb : [255, 255, 255]);
         ctx.drawImage(sprite, sx - gsz / 2, sy - gsz / 2, gsz, gsz);
         ctx.globalAlpha = 1;
 
         // Radial streak away from the centre while the note is hot.
-        if (e > 0.05) {
+        if (e > 0.05 && detail > 0.5) {
           const { cx, cy } = this.layout;
           const dx = sx - cx;
           const dy = sy - cy;
@@ -450,7 +468,7 @@ export class Grid {
           const tx = sx + (dx / d) * len;
           const ty = sy + (dy / d) * len;
           const g = ctx.createLinearGradient(sx, sy, tx, ty);
-          g.addColorStop(0, `rgba(${cs},${0.34 * e})`);
+          g.addColorStop(0, `rgba(${cs},${0.34 * e * A})`);
           g.addColorStop(1, `rgba(${cs},0)`);
           ctx.strokeStyle = g;
           ctx.lineWidth = rad * 1.1;
@@ -461,7 +479,7 @@ export class Grid {
           ctx.stroke();
         }
 
-        ctx.fillStyle = `rgba(${cs},${alpha})`;
+        ctx.fillStyle = `rgba(${cs},${dotAlpha * A})`;
         ctx.beginPath();
         ctx.arc(sx, sy, rad, 0, Math.PI * 2);
         ctx.fill();

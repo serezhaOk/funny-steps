@@ -58,41 +58,34 @@ const TONE_SETTINGS: Record<
   machine: { cutoff: [1200, 9000], chorus: 0.1, delayWet: 0.12, reverbWet: [0.06, 0.22] },
 };
 
+/** One preset's own colouring: filter -> chorus -> delay, plus a reverb send. */
+interface Chain {
+  filter: Tone.Filter;
+  chorus: Tone.Chorus;
+  delay: Tone.PingPongDelay;
+  send: Tone.Gain;
+}
+
 export class Synths {
   private ready = false;
   private initing: Promise<void> | null = null;
-  private filter!: Tone.Filter;
-  private chorus!: Tone.Chorus;
-  private delay!: Tone.PingPongDelay;
+  /** Shared reverb bus — one convolution for every preset, not four. */
   private reverb!: Tone.Reverb;
-  private preset: SynthId = 'reverie';
+  private out!: Tone.ToneAudioNode;
+  private chains = new Map<SynthId, Chain>();
+  /** Voice budget so four busy tracks can't melt a phone. */
+  private active = 0;
+  private readonly maxVoices = 40;
 
   init(ctx: AudioContext, out: AudioNode): Promise<void> {
     if (this.initing) return this.initing;
     this.initing = (async () => {
       Tone.setContext(ctx);
-
-      this.filter = new Tone.Filter(1800, 'lowpass');
-      this.filter.Q.value = 1.2;
-      this.chorus = new Tone.Chorus({
-        frequency: 0.45,
-        delayTime: 6,
-        depth: 0.55,
-        wet: 0.5,
-      }).start();
-      this.delay = new Tone.PingPongDelay({
-        delayTime: 0.32,
-        feedback: 0.38,
-        wet: 0.28,
-      });
-      this.reverb = new Tone.Reverb({ decay: 7, preDelay: 0.02, wet: 0.42 });
+      this.out = out as unknown as Tone.ToneAudioNode;
+      this.reverb = new Tone.Reverb({ decay: 7, preDelay: 0.02, wet: 1 });
       await this.reverb.ready;
-
-      this.filter.chain(this.chorus, this.delay, this.reverb);
-      // Tone nodes connect happily to native AudioNodes.
-      this.reverb.connect(out as unknown as Tone.ToneAudioNode);
+      this.reverb.connect(this.out);
       this.ready = true;
-      this.setPreset(this.preset);
     })();
     return this.initing;
   }
@@ -101,28 +94,63 @@ export class Synths {
     return this.ready;
   }
 
-  setPreset(id: SynthId): void {
-    this.preset = id;
-    if (!this.ready) return;
+  /** Build (once) the effect chain a preset plays through. */
+  private chainFor(id: SynthId): Chain {
+    const hit = this.chains.get(id);
+    if (hit) return hit;
     const s = TONE_SETTINGS[id];
-    const now = Tone.now();
-    this.chorus.wet.rampTo(s.chorus, 0.2, now);
-    this.delay.wet.rampTo(s.delayWet, 0.2, now);
-    this.reverb.wet.rampTo((s.reverbWet[0] + s.reverbWet[1]) / 2, 0.3, now);
-    this.filter.frequency.rampTo((s.cutoff[0] + s.cutoff[1]) / 2, 0.3, now);
+
+    const filter = new Tone.Filter((s.cutoff[0] + s.cutoff[1]) / 2, 'lowpass');
+    filter.Q.value = 1.2;
+    const chorus = new Tone.Chorus({
+      frequency: 0.45,
+      delayTime: 6,
+      depth: 0.55,
+      wet: s.chorus,
+    }).start();
+    const delay = new Tone.PingPongDelay({
+      delayTime: 0.32,
+      feedback: 0.38,
+      wet: s.delayWet,
+    });
+    const send = new Tone.Gain((s.reverbWet[0] + s.reverbWet[1]) / 2);
+
+    filter.chain(chorus, delay);
+    delay.connect(this.out); // dry
+    delay.connect(send);
+    send.connect(this.reverb); // wet
+
+    const chain = { filter, chorus, delay, send };
+    this.chains.set(id, chain);
+    return chain;
   }
 
-  /** Wire a one-shot voice in and bin it once its tail has rung out. */
-  private live(node: Tone.ToneAudioNode, time: number, ttl: number): void {
-    node.connect(this.filter);
+  /** Wire a one-shot voice into its preset's chain and bin it after the tail. */
+  private live(
+    id: SynthId,
+    node: Tone.ToneAudioNode,
+    time: number,
+    ttl: number
+  ): void {
+    node.connect(this.chainFor(id).filter);
     const ms = (time - Tone.now() + ttl) * 1000;
-    window.setTimeout(() => node.dispose(), Math.max(0, ms));
+    this.active++;
+    window.setTimeout(() => {
+      node.dispose();
+      this.active--;
+    }, Math.max(0, ms));
   }
 
-  trigger(midi: number, vel: number, time: number): void {
-    if (!this.ready) return;
+  /** Room for another note? Keeps four dense tracks from stacking up. */
+  get hasHeadroom(): boolean {
+    return this.active < this.maxVoices;
+  }
+
+  trigger(id: SynthId, midi: number, vel: number, time: number): void {
+    if (!this.ready || !this.hasHeadroom) return;
+    this.chainFor(id);
     const freq = Tone.Frequency(midi, 'midi').toFrequency();
-    switch (this.preset) {
+    switch (id) {
       case 'reverie':
         return this.reverie(freq, vel, time);
       case 'kalimba':
@@ -158,7 +186,7 @@ export class Synths {
       detune: rnd(-14, 14),
     });
     s.triggerAttackRelease(freq, dur, time, vel);
-    this.live(s, time, dur + release + 0.4);
+    this.live('reverie', s, time, dur + release + 0.4);
   }
 
   private reverie(freq: number, vel: number, time: number): void {
@@ -200,7 +228,7 @@ export class Synths {
     lp.frequency.rampTo(rnd(500, 1600), rnd(0.3, 1.1), time);
     p.connect(lp);
     p.triggerAttack(freq, time);
-    this.live(lp, time, 2.2);
+    this.live('kalimba', lp, time, 2.2);
     window.setTimeout(
       () => p.dispose(),
       Math.max(0, (time - Tone.now() + 2.2) * 1000)
@@ -215,7 +243,7 @@ export class Synths {
         resonance: resonance * 0.8,
       });
       g.triggerAttack(freq * 2, time + rnd(0.01, 0.05));
-      this.live(g, time, 1.6);
+      this.live('kalimba', g, time, 1.6);
     }
   }
 
@@ -253,7 +281,7 @@ export class Synths {
     }).start();
     s.connect(trem);
     s.triggerAttackRelease(freq, dur, time, vel);
-    this.live(trem, time, dur + release + 0.4);
+    this.live('rhodes', trem, time, dur + release + 0.4);
     window.setTimeout(
       () => s.dispose(),
       Math.max(0, (time - Tone.now() + dur + release + 0.4) * 1000)
@@ -273,7 +301,7 @@ export class Synths {
         time + rnd(0.01, 0.06),
         vel * 0.4
       );
-      this.live(g, time, dur + 1.4);
+      this.live('rhodes', g, time, dur + 1.4);
     }
   }
 
@@ -312,7 +340,7 @@ export class Synths {
         time + (i ? rnd(0.02, 0.16) : 0),
         vel * (i ? 0.55 : 1)
       );
-      this.live(pan, time, dur + release + 0.6);
+      this.live('mirage', pan, time, dur + release + 0.6);
       window.setTimeout(
         () => s.dispose(),
         Math.max(0, (time - Tone.now() + dur + release + 0.6) * 1000)
@@ -343,7 +371,7 @@ export class Synths {
         },
       });
       k.triggerAttackRelease(freq / 4, rnd(0.08, 0.3), time, vel);
-      this.live(k, time, 1.4);
+      this.live('machine', k, time, 1.4);
       return;
     }
 
@@ -360,7 +388,7 @@ export class Synths {
         },
       });
       t.triggerAttackRelease(freq / 2, rnd(0.06, 0.24), time, vel);
-      this.live(t, time, 1.2);
+      this.live('machine', t, time, 1.2);
       return;
     }
 
@@ -380,7 +408,7 @@ export class Synths {
       bp.Q.value = rnd(0.6, 2.4);
       n.connect(bp);
       n.triggerAttackRelease(rnd(0.05, 0.2), time, vel);
-      this.live(bp, time, 1);
+      this.live('machine', bp, time, 1);
       window.setTimeout(
         () => n.dispose(),
         Math.max(0, (time - Tone.now() + 1) * 1000)
@@ -393,7 +421,7 @@ export class Synths {
         envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.05 },
       });
       body.triggerAttackRelease(freq / 2, 0.06, time, vel * 0.7);
-      this.live(body, time, 0.8);
+      this.live('machine', body, time, 0.8);
       return;
     }
 
@@ -415,7 +443,7 @@ export class Synths {
         bp.Q.value = rnd(1, 3);
         c.connect(bp);
         c.triggerAttackRelease(0.03, time + i * rnd(0.008, 0.02), vel * 0.8);
-        this.live(bp, time, 0.7);
+        this.live('machine', bp, time, 0.7);
         window.setTimeout(
           () => c.dispose(),
           Math.max(0, (time - Tone.now() + 0.7) * 1000)
@@ -440,24 +468,26 @@ export class Synths {
     } as never);
     m.frequency.value = freq * rnd(0.9, 1.6);
     m.triggerAttackRelease(open ? rnd(0.2, 0.6) : rnd(0.02, 0.1), time, vel);
-    this.live(m, time, 1.6);
+    this.live('machine', m, time, 1.6);
   }
 
-  // Called once per sequencer step; drifts the patch at bar boundaries.
-  tick(step: number, bpm: number): void {
+  // Called once per bar per preset in use; drifts that preset's patch.
+  tick(id: SynthId, step: number, bpm: number): void {
     if (!this.ready || step !== 0) return;
-    const s = TONE_SETTINGS[this.preset];
+    const chain = this.chains.get(id);
+    if (!chain) return;
+    const s = TONE_SETTINGS[id];
     const now = Tone.now();
     const stepDur = 60 / bpm / 4;
 
-    this.filter.frequency.rampTo(
+    chain.filter.frequency.rampTo(
       rnd(s.cutoff[0], s.cutoff[1]),
       rnd(0.4, 2.5),
       now
     );
-    this.delay.delayTime.rampTo(stepDur * pick([2, 3, 4, 6]), 0.3, now);
-    this.delay.feedback.rampTo(rnd(0.2, 0.55), 0.5, now);
-    this.chorus.depth = rnd(0.2, 0.8);
-    this.reverb.wet.rampTo(rnd(s.reverbWet[0], s.reverbWet[1]), 1, now);
+    chain.delay.delayTime.rampTo(stepDur * pick([2, 3, 4, 6]), 0.3, now);
+    chain.delay.feedback.rampTo(rnd(0.2, 0.55), 0.5, now);
+    chain.chorus.depth = rnd(0.2, 0.8);
+    chain.send.gain.rampTo(rnd(s.reverbWet[0], s.reverbWet[1]), 1, now);
   }
 }

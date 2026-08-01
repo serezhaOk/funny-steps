@@ -20,12 +20,18 @@
     <div id="app" hidden>
       <header>
         <button id="bpm" class="lbl">120 BPM</button>
+        <button id="view-toggle" aria-label="tracks">
+          <span></span><span></span><span></span><span></span>
+        </button>
         <div class="key">
           <button id="root" class="lbl">A</button>
           <button id="scale" class="lbl">MINOR</button>
         </div>
       </header>
-      <canvas id="grid"></canvas>
+      <div id="stage">
+        <canvas id="grid"></canvas>
+        <div id="mixer-ui"></div>
+      </div>
       <footer>
         <button id="erase" class="lbl">ERASE</button>
         <button id="sample" class="lbl">KALIMBOX</button>

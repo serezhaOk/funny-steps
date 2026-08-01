@@ -44,7 +44,7 @@ for (let i = 1; i <= 8; i++) {
 await page.mouse.up();
 
 const dist = await page.evaluate(() => {
-  const cells = window.__dbg.grid.cells;
+  const cells = window.__dbg.grid().cells;
   let full = 0;
   let partial = 0;
   for (const v of cells) {

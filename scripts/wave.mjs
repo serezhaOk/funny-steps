@@ -17,16 +17,16 @@ await page.click('#boot-btn');
 await page.waitForSelector('#app:not([hidden])', { timeout: 8000 });
 
 const dims = await page.evaluate(() => ({
-  cols: window.__dbg.grid.cells.length / 16,
-  cell: window.__dbg.grid.layout.cell,
+  cols: window.__dbg.grid().cells.length / 16,
+  cell: window.__dbg.grid().layout.cell,
 }));
 console.log('DIMS:', JSON.stringify(dims));
 
 // quiet field, then one flash dead centre
 await page.evaluate(() => {
   window.__dbg.transport.stop();
-  window.__dbg.grid.clear();
-  window.__dbg.grid.flash(8, 6, 1);
+  window.__dbg.grid().clear();
+  window.__dbg.grid().flash(8, 6, 1);
 });
 
 // sample the brightest non-grey pixel over time
