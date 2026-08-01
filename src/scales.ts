@@ -17,7 +17,7 @@ export const SCALES: Scale[] = [
   { name: 'phrygian', steps: [0, 1, 3, 5, 7, 8, 10] },
 ];
 
-export const COLS = 14;
+export const COLS = 12;
 
 // Samples are recorded in C, so a column whose pitch equals the sample's base
 // note (default C4 = 60) plays at natural speed.
