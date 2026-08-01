@@ -3,7 +3,7 @@ import { Audio, Transport } from './audio';
 import { Grid } from './grid';
 import { COLS, NOTE_NAMES, SCALES, columnMidi, rateTable } from './scales';
 import { SAMPLES, type SampleDef } from './samples';
-import { Dream } from './dream';
+import { Synths, SYNTHS, type SynthId } from './synths';
 
 const $ = <T extends HTMLElement>(sel: string) =>
   document.querySelector(sel) as T;
@@ -11,20 +11,21 @@ const $ = <T extends HTMLElement>(sel: string) =>
 const audio = new Audio();
 const transport = new Transport(audio);
 const grid = new Grid();
-const dream = new Dream();
+const synths = new Synths();
 
-// The sound cycle: every sample plus the REVERIE dream-synth.
-type Voice = { kind: 'sample'; def: SampleDef } | { kind: 'dream' };
+// The sound cycle: the generative synths first, then the sample pack.
+type Voice =
+  | { kind: 'sample'; def: SampleDef }
+  | { kind: 'synth'; id: SynthId; label: string };
 const VOICES: Voice[] = [
-  { kind: 'sample', def: SAMPLES[0] },
-  { kind: 'dream' },
-  ...SAMPLES.slice(1).map((def): Voice => ({ kind: 'sample', def })),
+  ...SYNTHS.map((s): Voice => ({ kind: 'synth', id: s.id, label: s.label })),
+  ...SAMPLES.map((def): Voice => ({ kind: 'sample', def })),
 ];
-const voiceLabel = (v: Voice) => (v.kind === 'dream' ? 'REVERIE' : v.def.label);
+const voiceLabel = (v: Voice) => (v.kind === 'synth' ? v.label : v.def.label);
 
 let rootPc = 9; // A
 let scaleIdx = 0; // minor
-let voiceIdx = 0; // kalimbox
+let voiceIdx = 0; // REVERIE
 let eraseMode = false;
 let buffer: AudioBuffer | null = null;
 let rates: number[] = [];
@@ -49,7 +50,9 @@ $('#boot-btn').addEventListener('click', async () => {
   btn.textContent = 'LOADING…';
   try {
     await audio.start();
-    buffer = await audio.load(SAMPLES[0].file);
+    // Boot straight into the first synth: no sample download to wait on.
+    await synths.init(audio.ctx, audio.output);
+    synths.setPreset(SYNTHS[0].id);
     $('#boot').hidden = true;
     $('#app').hidden = false;
     wire();
@@ -77,8 +80,8 @@ $('#boot-btn').addEventListener('click', async () => {
 // (random release 10–90%, micro-detune, velocity shimmer).
 function onStep(step: number, time: number): void {
   const voice = VOICES[voiceIdx];
-  const dreaming = voice.kind === 'dream' && dream.isReady;
-  if (dreaming) dream.tick(step, transport.bpm);
+  const synthing = voice.kind === 'synth' && synths.isReady;
+  if (synthing) synths.tick(step, transport.bpm);
 
   const lit: Array<[number, number]> = [];
   for (let c = 0; c < COLS; c++) {
@@ -87,8 +90,8 @@ function onStep(step: number, time: number): void {
     if (v < 1 && Math.random() > 0.35 + 0.65 * v) continue;
 
     const vel = v * rnd(0.72, 0.98);
-    if (dreaming) {
-      dream.trigger(midis[c], vel, time);
+    if (synthing) {
+      synths.trigger(midis[c], vel, time);
     } else if (buffer) {
       const cents = rnd(-15, 15);
       const rate = rates[c] * Math.pow(2, cents / 1200);
@@ -215,8 +218,9 @@ async function cycleSample(): Promise<void> {
   refreshLabels();
   try {
     const v = VOICES[voiceIdx];
-    if (v.kind === 'dream') {
-      await dream.init(audio.ctx, audio.output);
+    if (v.kind === 'synth') {
+      await synths.init(audio.ctx, audio.output);
+      synths.setPreset(v.id);
     } else {
       buffer = await audio.load(v.def.file);
     }

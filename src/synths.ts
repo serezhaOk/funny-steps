@@ -1,0 +1,463 @@
+// The synth voices, built on Tone.js. Every preset follows the same rule:
+// random within a frame. Pitches always come from the grid's scale, but the
+// timbre is re-rolled on every note and the patch drifts once per bar, so a
+// pattern never repeats itself exactly.
+//
+// Each note builds its own short-lived synth and disposes after its tail —
+// there is no shared voice pool to exhaust (a PolySynth silently ran dry by
+// the second loop under long random releases).
+
+import * as Tone from 'tone';
+
+const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+const pick = <T>(xs: readonly T[]): T =>
+  xs[Math.floor(Math.random() * xs.length)];
+
+export type SynthId = 'reverie' | 'kalimba' | 'rhodes' | 'mirage' | 'machine';
+
+export interface SynthDef {
+  id: SynthId;
+  label: string;
+}
+
+export const SYNTHS: SynthDef[] = [
+  { id: 'reverie', label: 'REVERIE' },
+  { id: 'kalimba', label: 'KALIMBA' },
+  { id: 'rhodes', label: 'RHODES' },
+  { id: 'mirage', label: 'MIRAGE' },
+  { id: 'machine', label: 'MACHINE' },
+];
+
+const OSC_TYPES = [
+  'sine',
+  'triangle',
+  'fatsawtooth',
+  'fattriangle',
+  'fmsine',
+  'fmtriangle',
+  'amsine',
+  'square',
+] as const;
+
+const MAX_RELEASE = 3.2; // REVERIE tail; per-note release = 10–90% of this
+
+/** Per-preset home base for the shared effect chain. */
+const TONE_SETTINGS: Record<
+  SynthId,
+  {
+    cutoff: [number, number];
+    chorus: number;
+    delayWet: number;
+    reverbWet: [number, number];
+  }
+> = {
+  reverie: { cutoff: [500, 5200], chorus: 0.5, delayWet: 0.28, reverbWet: [0.25, 0.55] },
+  kalimba: { cutoff: [700, 3400], chorus: 0.25, delayWet: 0.2, reverbWet: [0.2, 0.4] },
+  rhodes: { cutoff: [900, 6000], chorus: 0.6, delayWet: 0.18, reverbWet: [0.2, 0.42] },
+  mirage: { cutoff: [400, 4200], chorus: 0.7, delayWet: 0.42, reverbWet: [0.45, 0.75] },
+  machine: { cutoff: [1200, 9000], chorus: 0.1, delayWet: 0.12, reverbWet: [0.06, 0.22] },
+};
+
+export class Synths {
+  private ready = false;
+  private initing: Promise<void> | null = null;
+  private filter!: Tone.Filter;
+  private chorus!: Tone.Chorus;
+  private delay!: Tone.PingPongDelay;
+  private reverb!: Tone.Reverb;
+  private preset: SynthId = 'reverie';
+
+  init(ctx: AudioContext, out: AudioNode): Promise<void> {
+    if (this.initing) return this.initing;
+    this.initing = (async () => {
+      Tone.setContext(ctx);
+
+      this.filter = new Tone.Filter(1800, 'lowpass');
+      this.filter.Q.value = 1.2;
+      this.chorus = new Tone.Chorus({
+        frequency: 0.45,
+        delayTime: 6,
+        depth: 0.55,
+        wet: 0.5,
+      }).start();
+      this.delay = new Tone.PingPongDelay({
+        delayTime: 0.32,
+        feedback: 0.38,
+        wet: 0.28,
+      });
+      this.reverb = new Tone.Reverb({ decay: 7, preDelay: 0.02, wet: 0.42 });
+      await this.reverb.ready;
+
+      this.filter.chain(this.chorus, this.delay, this.reverb);
+      // Tone nodes connect happily to native AudioNodes.
+      this.reverb.connect(out as unknown as Tone.ToneAudioNode);
+      this.ready = true;
+      this.setPreset(this.preset);
+    })();
+    return this.initing;
+  }
+
+  get isReady(): boolean {
+    return this.ready;
+  }
+
+  setPreset(id: SynthId): void {
+    this.preset = id;
+    if (!this.ready) return;
+    const s = TONE_SETTINGS[id];
+    const now = Tone.now();
+    this.chorus.wet.rampTo(s.chorus, 0.2, now);
+    this.delay.wet.rampTo(s.delayWet, 0.2, now);
+    this.reverb.wet.rampTo((s.reverbWet[0] + s.reverbWet[1]) / 2, 0.3, now);
+    this.filter.frequency.rampTo((s.cutoff[0] + s.cutoff[1]) / 2, 0.3, now);
+  }
+
+  /** Wire a one-shot voice in and bin it once its tail has rung out. */
+  private live(node: Tone.ToneAudioNode, time: number, ttl: number): void {
+    node.connect(this.filter);
+    const ms = (time - Tone.now() + ttl) * 1000;
+    window.setTimeout(() => node.dispose(), Math.max(0, ms));
+  }
+
+  trigger(midi: number, vel: number, time: number): void {
+    if (!this.ready) return;
+    const freq = Tone.Frequency(midi, 'midi').toFrequency();
+    switch (this.preset) {
+      case 'reverie':
+        return this.reverie(freq, vel, time);
+      case 'kalimba':
+        return this.kalimba(freq, vel, time);
+      case 'rhodes':
+        return this.rhodes(freq, vel, time);
+      case 'mirage':
+        return this.mirage(freq, vel, time);
+      case 'machine':
+        return this.machine(midi, vel, time);
+    }
+  }
+
+  // ---------------------------------------------------------- REVERIE -----
+  // Oscillator flavour re-rolled per note, random 10–90% release, ghost
+  // octave sparkles and the occasional sub for weight.
+  private reverieNote(
+    freq: number,
+    dur: number,
+    time: number,
+    vel: number,
+    release: number
+  ): void {
+    const s = new Tone.Synth({
+      volume: -8,
+      oscillator: { type: pick(OSC_TYPES) } as never,
+      envelope: {
+        attack: Math.random() < 0.3 ? rnd(0.04, 0.35) : rnd(0.004, 0.02),
+        decay: rnd(0.08, 0.5),
+        sustain: rnd(0.1, 0.5),
+        release,
+      },
+      detune: rnd(-14, 14),
+    });
+    s.triggerAttackRelease(freq, dur, time, vel);
+    this.live(s, time, dur + release + 0.4);
+  }
+
+  private reverie(freq: number, vel: number, time: number): void {
+    const dur = rnd(0.06, 0.3);
+    const release = rnd(0.1, 0.9) * MAX_RELEASE;
+    this.reverieNote(freq, dur, time, vel, release);
+    if (Math.random() < 0.22) {
+      this.reverieNote(
+        freq * 2,
+        dur * 0.6,
+        time + rnd(0.02, 0.09),
+        vel * rnd(0.2, 0.45),
+        release * 0.7
+      );
+    }
+    if (Math.random() < 0.1) {
+      this.reverieNote(freq / 2, dur, time, vel * 0.5, release);
+    }
+  }
+
+  // ---------------------------------------------------------- KALIMBA -----
+  // Karplus-Strong pluck: muted, woody, thumb-piano. Release (resonance) and
+  // cutoff (dampening) are rolled fresh on every note.
+  private kalimba(freq: number, vel: number, time: number): void {
+    const resonance = rnd(0.55, 0.94); // how long the tine rings
+    const dampening = rnd(900, 4500); // the pluck's cutoff
+    // PluckSynth has no velocity argument, so dynamics live in the gain.
+    const db = (v: number) => Math.max(-40, 20 * Math.log10(Math.max(0.02, v)));
+    const p = new Tone.PluckSynth({
+      volume: 5 + db(vel),
+      attackNoise: rnd(0.4, 1.8),
+      dampening,
+      resonance,
+      release: rnd(0.1, 0.9) * 1.4,
+    });
+    // A per-note lowpass keeps it muted, and sweeps a little as it decays.
+    const lp = new Tone.Filter(rnd(1200, 5200), 'lowpass');
+    lp.Q.value = rnd(0.3, 2.2);
+    lp.frequency.rampTo(rnd(500, 1600), rnd(0.3, 1.1), time);
+    p.connect(lp);
+    p.triggerAttack(freq, time);
+    this.live(lp, time, 2.2);
+    window.setTimeout(
+      () => p.dispose(),
+      Math.max(0, (time - Tone.now() + 2.2) * 1000)
+    );
+
+    // Soft octave ghost, like a thumb catching the neighbouring tine.
+    if (Math.random() < 0.18) {
+      const g = new Tone.PluckSynth({
+        volume: -3 + db(vel * 0.5),
+        attackNoise: 0.6,
+        dampening: dampening * 1.4,
+        resonance: resonance * 0.8,
+      });
+      g.triggerAttack(freq * 2, time + rnd(0.01, 0.05));
+      this.live(g, time, 1.6);
+    }
+  }
+
+  // ----------------------------------------------------------- RHODES -----
+  // FM electric piano: a bell-ish attack over a warm body, with a slow
+  // tremolo shimmer so held notes keep moving.
+  private rhodes(freq: number, vel: number, time: number): void {
+    const dur = rnd(0.12, 0.45);
+    const release = rnd(0.4, 1.8);
+    const s = new Tone.FMSynth({
+      volume: 0,
+      harmonicity: pick([1, 2, 3, 3.01, 4]),
+      modulationIndex: rnd(3, 11),
+      oscillator: { type: 'sine' },
+      envelope: {
+        attack: rnd(0.002, 0.012),
+        decay: rnd(0.25, 0.9),
+        sustain: rnd(0.05, 0.28),
+        release,
+      },
+      modulation: { type: pick(['sine', 'triangle']) } as never,
+      modulationEnvelope: {
+        attack: rnd(0.002, 0.02),
+        decay: rnd(0.1, 0.5),
+        sustain: rnd(0, 0.2),
+        release: rnd(0.2, 0.8),
+      },
+      detune: rnd(-8, 8),
+    });
+    // Rhodes shimmer: gentle amplitude wobble, rate rolled per note.
+    const trem = new Tone.Tremolo({
+      frequency: rnd(2.5, 7),
+      depth: rnd(0.15, 0.55),
+      spread: 180,
+    }).start();
+    s.connect(trem);
+    s.triggerAttackRelease(freq, dur, time, vel);
+    this.live(trem, time, dur + release + 0.4);
+    window.setTimeout(
+      () => s.dispose(),
+      Math.max(0, (time - Tone.now() + dur + release + 0.4) * 1000)
+    );
+
+    // Occasional fifth or octave, the way a Rhodes bar rings sympathetically.
+    if (Math.random() < 0.16) {
+      const g = new Tone.FMSynth({
+        volume: -12,
+        harmonicity: pick([2, 3]),
+        modulationIndex: rnd(2, 6),
+        envelope: { attack: 0.005, decay: 0.4, sustain: 0.05, release: 0.9 },
+      });
+      g.triggerAttackRelease(
+        freq * pick([1.5, 2]),
+        dur * 0.7,
+        time + rnd(0.01, 0.06),
+        vel * 0.4
+      );
+      this.live(g, time, dur + 1.4);
+    }
+  }
+
+  // ----------------------------------------------------------- MIRAGE -----
+  // Wide, slow-blooming AM pad: notes drift in, detune against themselves and
+  // smear into the reverb. The atmospheric one.
+  private mirage(freq: number, vel: number, time: number): void {
+    const release = rnd(1.2, 3.6);
+    const dur = rnd(0.2, 0.7);
+    const layers = Math.random() < 0.4 ? 2 : 1;
+    for (let i = 0; i < layers; i++) {
+      const s = new Tone.AMSynth({
+        volume: 4,
+        harmonicity: rnd(0.5, 3.5),
+        oscillator: { type: pick(['sine', 'triangle', 'fatsine']) } as never,
+        envelope: {
+          attack: rnd(0.15, 0.9),
+          decay: rnd(0.3, 1.2),
+          sustain: rnd(0.2, 0.6),
+          release,
+        },
+        modulation: { type: pick(['sine', 'square']) } as never,
+        modulationEnvelope: {
+          attack: rnd(0.3, 1.5),
+          decay: rnd(0.2, 1),
+          sustain: rnd(0.2, 0.8),
+          release: rnd(0.5, 2),
+        },
+        detune: rnd(-25, 25) + (i ? rnd(-12, 12) : 0),
+      });
+      const pan = new Tone.Panner(rnd(-0.8, 0.8));
+      s.connect(pan);
+      s.triggerAttackRelease(
+        freq * (i ? pick([1, 1.5, 2]) : 1),
+        dur,
+        time + (i ? rnd(0.02, 0.16) : 0),
+        vel * (i ? 0.55 : 1)
+      );
+      this.live(pan, time, dur + release + 0.6);
+      window.setTimeout(
+        () => s.dispose(),
+        Math.max(0, (time - Tone.now() + dur + release + 0.6) * 1000)
+      );
+    }
+  }
+
+  // ---------------------------------------------------------- MACHINE -----
+  // Synthesised drums. The column's register picks the instrument — low
+  // columns are kicks and toms, the middle is snare/clap, the top is metal —
+  // and the exact pitch tunes it, so drawing melodies draws grooves.
+  private machine(midi: number, vel: number, time: number): void {
+    const freq = Tone.Frequency(midi, 'midi').toFrequency();
+    const kind = midi % 12;
+
+    // kick | tom | snare | clap | hat  — chosen by scale degree
+    if (kind < 3) {
+      const k = new Tone.MembraneSynth({
+        volume: -9,
+        pitchDecay: rnd(0.02, 0.09),
+        octaves: rnd(3, 8),
+        oscillator: { type: pick(['sine', 'triangle']) } as never,
+        envelope: {
+          attack: 0.001,
+          decay: rnd(0.18, 0.6),
+          sustain: 0,
+          release: rnd(0.05, 0.3),
+        },
+      });
+      k.triggerAttackRelease(freq / 4, rnd(0.08, 0.3), time, vel);
+      this.live(k, time, 1.4);
+      return;
+    }
+
+    if (kind < 6) {
+      const t = new Tone.MembraneSynth({
+        volume: -13,
+        pitchDecay: rnd(0.04, 0.14),
+        octaves: rnd(1.5, 4),
+        envelope: {
+          attack: 0.001,
+          decay: rnd(0.12, 0.45),
+          sustain: 0,
+          release: rnd(0.05, 0.2),
+        },
+      });
+      t.triggerAttackRelease(freq / 2, rnd(0.06, 0.24), time, vel);
+      this.live(t, time, 1.2);
+      return;
+    }
+
+    if (kind < 9) {
+      // Snare: noise burst plus a tuned body.
+      const n = new Tone.NoiseSynth({
+        volume: -15,
+        noise: { type: pick(['white', 'pink']) } as never,
+        envelope: {
+          attack: 0.001,
+          decay: rnd(0.08, 0.3),
+          sustain: 0,
+          release: rnd(0.02, 0.12),
+        },
+      });
+      const bp = new Tone.Filter(rnd(1200, 3600), 'bandpass');
+      bp.Q.value = rnd(0.6, 2.4);
+      n.connect(bp);
+      n.triggerAttackRelease(rnd(0.05, 0.2), time, vel);
+      this.live(bp, time, 1);
+      window.setTimeout(
+        () => n.dispose(),
+        Math.max(0, (time - Tone.now() + 1) * 1000)
+      );
+
+      const body = new Tone.MembraneSynth({
+        volume: -21,
+        pitchDecay: 0.03,
+        octaves: 2,
+        envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.05 },
+      });
+      body.triggerAttackRelease(freq / 2, 0.06, time, vel * 0.7);
+      this.live(body, time, 0.8);
+      return;
+    }
+
+    if (kind < 11) {
+      // Clap: a few noise slaps in quick succession.
+      const hits = 2 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < hits; i++) {
+        const c = new Tone.NoiseSynth({
+          volume: -19,
+          noise: { type: 'white' },
+          envelope: {
+            attack: 0.001,
+            decay: rnd(0.03, 0.12),
+            sustain: 0,
+            release: 0.02,
+          },
+        });
+        const bp = new Tone.Filter(rnd(900, 2200), 'bandpass');
+        bp.Q.value = rnd(1, 3);
+        c.connect(bp);
+        c.triggerAttackRelease(0.03, time + i * rnd(0.008, 0.02), vel * 0.8);
+        this.live(bp, time, 0.7);
+        window.setTimeout(
+          () => c.dispose(),
+          Math.max(0, (time - Tone.now() + 0.7) * 1000)
+        );
+      }
+      return;
+    }
+
+    // Metal: hats and cymbals, open or closed at random.
+    const open = Math.random() < 0.25;
+    const m = new Tone.MetalSynth({
+      volume: -26,
+      envelope: {
+        attack: 0.001,
+        decay: open ? rnd(0.3, 0.9) : rnd(0.03, 0.14),
+        release: rnd(0.02, 0.2),
+      },
+      harmonicity: rnd(3, 9),
+      modulationIndex: rnd(12, 42),
+      resonance: rnd(2000, 7000),
+      octaves: rnd(0.5, 2),
+    } as never);
+    m.frequency.value = freq * rnd(0.9, 1.6);
+    m.triggerAttackRelease(open ? rnd(0.2, 0.6) : rnd(0.02, 0.1), time, vel);
+    this.live(m, time, 1.6);
+  }
+
+  // Called once per sequencer step; drifts the patch at bar boundaries.
+  tick(step: number, bpm: number): void {
+    if (!this.ready || step !== 0) return;
+    const s = TONE_SETTINGS[this.preset];
+    const now = Tone.now();
+    const stepDur = 60 / bpm / 4;
+
+    this.filter.frequency.rampTo(
+      rnd(s.cutoff[0], s.cutoff[1]),
+      rnd(0.4, 2.5),
+      now
+    );
+    this.delay.delayTime.rampTo(stepDur * pick([2, 3, 4, 6]), 0.3, now);
+    this.delay.feedback.rampTo(rnd(0.2, 0.55), 0.5, now);
+    this.chorus.depth = rnd(0.2, 0.8);
+    this.reverb.wet.rampTo(rnd(s.reverbWet[0], s.reverbWet[1]), 1, now);
+  }
+}
