@@ -13,7 +13,7 @@ const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const pick = <T>(xs: readonly T[]): T =>
   xs[Math.floor(Math.random() * xs.length)];
 
-export type SynthId = 'reverie' | 'kalimba' | 'rhodes' | 'mirage' | 'machine';
+export type SynthId = 'reverie' | 'kalimba' | 'rhodes' | 'machine';
 
 export interface SynthDef {
   id: SynthId;
@@ -24,7 +24,6 @@ export const SYNTHS: SynthDef[] = [
   { id: 'reverie', label: 'REVERIE' },
   { id: 'kalimba', label: 'KALIMBA' },
   { id: 'rhodes', label: 'RHODES' },
-  { id: 'mirage', label: 'MIRAGE' },
   { id: 'machine', label: 'MACHINE' },
 ];
 
@@ -54,7 +53,6 @@ const TONE_SETTINGS: Record<
   reverie: { cutoff: [500, 5200], chorus: 0.5, delayWet: 0.28, reverbWet: [0.25, 0.55] },
   kalimba: { cutoff: [700, 3400], chorus: 0.25, delayWet: 0.2, reverbWet: [0.2, 0.4] },
   rhodes: { cutoff: [900, 6000], chorus: 0.6, delayWet: 0.18, reverbWet: [0.2, 0.42] },
-  mirage: { cutoff: [400, 4200], chorus: 0.7, delayWet: 0.42, reverbWet: [0.45, 0.75] },
   machine: { cutoff: [1200, 9000], chorus: 0.1, delayWet: 0.12, reverbWet: [0.06, 0.22] },
 };
 
@@ -157,8 +155,6 @@ export class Synths {
         return this.kalimba(freq, vel, time);
       case 'rhodes':
         return this.rhodes(freq, vel, time);
-      case 'mirage':
-        return this.mirage(freq, vel, time);
       case 'machine':
         return this.machine(midi, vel, time);
     }
@@ -175,7 +171,7 @@ export class Synths {
     release: number
   ): void {
     const s = new Tone.Synth({
-      volume: -8,
+      volume: -12,
       oscillator: { type: pick(OSC_TYPES) } as never,
       envelope: {
         attack: Math.random() < 0.3 ? rnd(0.04, 0.35) : rnd(0.004, 0.02),
@@ -305,49 +301,6 @@ export class Synths {
     }
   }
 
-  // ----------------------------------------------------------- MIRAGE -----
-  // Wide, slow-blooming AM pad: notes drift in, detune against themselves and
-  // smear into the reverb. The atmospheric one.
-  private mirage(freq: number, vel: number, time: number): void {
-    const release = rnd(1.2, 3.6);
-    const dur = rnd(0.2, 0.7);
-    const layers = Math.random() < 0.4 ? 2 : 1;
-    for (let i = 0; i < layers; i++) {
-      const s = new Tone.AMSynth({
-        volume: 4,
-        harmonicity: rnd(0.5, 3.5),
-        oscillator: { type: pick(['sine', 'triangle', 'fatsine']) } as never,
-        envelope: {
-          attack: rnd(0.15, 0.9),
-          decay: rnd(0.3, 1.2),
-          sustain: rnd(0.2, 0.6),
-          release,
-        },
-        modulation: { type: pick(['sine', 'square']) } as never,
-        modulationEnvelope: {
-          attack: rnd(0.3, 1.5),
-          decay: rnd(0.2, 1),
-          sustain: rnd(0.2, 0.8),
-          release: rnd(0.5, 2),
-        },
-        detune: rnd(-25, 25) + (i ? rnd(-12, 12) : 0),
-      });
-      const pan = new Tone.Panner(rnd(-0.8, 0.8));
-      s.connect(pan);
-      s.triggerAttackRelease(
-        freq * (i ? pick([1, 1.5, 2]) : 1),
-        dur,
-        time + (i ? rnd(0.02, 0.16) : 0),
-        vel * (i ? 0.55 : 1)
-      );
-      this.live('mirage', pan, time, dur + release + 0.6);
-      window.setTimeout(
-        () => s.dispose(),
-        Math.max(0, (time - Tone.now() + dur + release + 0.6) * 1000)
-      );
-    }
-  }
-
   // ---------------------------------------------------------- MACHINE -----
   // Synthesised drums. The column's register picks the instrument — low
   // columns are kicks and toms, the middle is snare/clap, the top is metal —
@@ -359,7 +312,7 @@ export class Synths {
     // kick | tom | snare | clap | hat  — chosen by scale degree
     if (kind < 3) {
       const k = new Tone.MembraneSynth({
-        volume: -9,
+        volume: -3,
         pitchDecay: rnd(0.02, 0.09),
         octaves: rnd(3, 8),
         oscillator: { type: pick(['sine', 'triangle']) } as never,
@@ -377,7 +330,7 @@ export class Synths {
 
     if (kind < 6) {
       const t = new Tone.MembraneSynth({
-        volume: -13,
+        volume: -7,
         pitchDecay: rnd(0.04, 0.14),
         octaves: rnd(1.5, 4),
         envelope: {
@@ -395,7 +348,7 @@ export class Synths {
     if (kind < 9) {
       // Snare: noise burst plus a tuned body.
       const n = new Tone.NoiseSynth({
-        volume: -15,
+        volume: -9,
         noise: { type: pick(['white', 'pink']) } as never,
         envelope: {
           attack: 0.001,
@@ -415,7 +368,7 @@ export class Synths {
       );
 
       const body = new Tone.MembraneSynth({
-        volume: -21,
+        volume: -15,
         pitchDecay: 0.03,
         octaves: 2,
         envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.05 },
@@ -430,7 +383,7 @@ export class Synths {
       const hits = 2 + Math.floor(Math.random() * 3);
       for (let i = 0; i < hits; i++) {
         const c = new Tone.NoiseSynth({
-          volume: -19,
+          volume: -13,
           noise: { type: 'white' },
           envelope: {
             attack: 0.001,
@@ -455,7 +408,7 @@ export class Synths {
     // Metal: hats and cymbals, open or closed at random.
     const open = Math.random() < 0.25;
     const m = new Tone.MetalSynth({
-      volume: -26,
+      volume: -21,
       envelope: {
         attack: 0.001,
         decay: open ? rnd(0.3, 0.9) : rnd(0.03, 0.14),

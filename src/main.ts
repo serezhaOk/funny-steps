@@ -31,9 +31,9 @@ interface Track {
   muted: boolean;
 }
 
-export const TRACKS = 4;
+export const TRACKS = 2;
 // Tracks start on different voices so the mixer is useful straight away.
-const DEFAULT_VOICES = ['reverie', 'kalimba', 'rhodes', 'machine'] as const;
+const DEFAULT_VOICES = ['reverie', 'machine'] as const;
 
 const tracks: Track[] = DEFAULT_VOICES.map((id) => ({
   grid: new Grid(),
@@ -168,16 +168,29 @@ type Rect = [number, number, number, number];
 
 const GAP = 10;
 
-/** Where track i sits in the 2x2 mixer. */
+/**
+ * Where track i sits in the mixer. Two tracks stack vertically (taller slots
+ * suit the 12x16 grid better); more than two fall back to a 2x2 board.
+ */
 function quadrant(i: number): Rect {
-  const w = (cssW - GAP * 3) / 2;
-  const h = (cssH - GAP * 3) / 2;
-  const x = GAP + (i % 2) * (w + GAP);
-  const y = GAP + Math.floor(i / 2) * (h + GAP);
+  const cols = TRACKS <= 2 ? 1 : 2;
+  const rows = Math.ceil(TRACKS / cols);
+  const w = (cssW - GAP * (cols + 1)) / cols;
+  const h = (cssH - GAP * (rows + 1)) / rows;
+  const x = GAP + (i % cols) * (w + GAP);
+  const y = GAP + Math.floor(i / cols) * (h + GAP);
   return [x, y, w, h];
 }
 
 const fullRect = (): Rect => [0, 0, cssW, cssH];
+
+const LABEL_ROOM = 40; // strip at the bottom of a slot for name + mute
+
+/** Where the grid itself draws inside a slot — above the label strip. */
+function slotGrid(i: number): Rect {
+  const [x, y, w, h] = quadrant(i);
+  return [x, y, w, Math.max(40, h - LABEL_ROOM)];
+}
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const lerpRect = (a: Rect, b: Rect, t: number): Rect => [
@@ -222,7 +235,7 @@ function frame(now: number): void {
 
   for (let i = 0; i < TRACKS; i++) {
     const isActive = i === activeTrack;
-    const quad = quadrant(i);
+    const quad = slotGrid(i);
     // The active track flies between full screen and its slot; the others
     // live in their slots and fade in as the mixer opens.
     const rect = isActive ? lerpRect(fullRect(), quad, t) : quad;

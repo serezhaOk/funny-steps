@@ -45,7 +45,7 @@ const measure = (secs) =>
     return Number(peak.toFixed(4));
   }, secs);
 
-const SYNTH_COUNT = 5;
+const SYNTH_COUNT = 4;
 const results = [];
 for (let i = 0; i < SYNTH_COUNT; i++) {
   const label = await page.$eval('#sample', (e) => e.textContent);

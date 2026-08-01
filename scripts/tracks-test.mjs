@@ -42,7 +42,8 @@ const rms = (secs) => page.evaluate(async (secs) => {
 }, secs);
 
 // Fill all four tracks via the mixer round trip
-for (let i = 0; i < 4; i++) {
+const N = await page.evaluate(() => window.__dbg.tracks.length);
+for (let i = 0; i < N; i++) {
   await page.evaluate((i) => window.__dbg.tracks[i].grid.random(), i);
 }
 const labels = await page.evaluate(() =>
@@ -79,10 +80,10 @@ const fps = await page.evaluate(async () => {
   });
   return Math.round((n / (performance.now() - t0)) * 1000);
 });
-console.log('FPS_MIXER_4_TRACKS:', fps);
+console.log('FPS_MIXER_ALL_TRACKS:', fps, 'tracks=', N);
 
-// tap the bottom-right quadrant -> track 3 becomes active and view goes full
-await page.mouse.click(box.x + box.w * 0.75, box.y + box.h * 0.75);
+// tap the last slot -> that track becomes active and the view goes full
+await page.mouse.click(box.x + box.w * 0.5, box.y + box.h * 0.8);
 await page.waitForTimeout(600);
 const after = await page.evaluate(() => ({
   active: window.__dbg.activeTrack(),
@@ -93,7 +94,7 @@ console.log('AFTER_TAP:', JSON.stringify(after));
 await page.screenshot({ path: 'scripts/full.png' });
 
 const ok = all > 0.01 && muted < all * 0.45 && back > all * 0.3 &&
-  inMixer && !after.mixer && after.active === 3;
+  inMixer && !after.mixer && after.active === N - 1;
 if (!ok) console.log('FAIL: track/mixer behaviour');
 console.log('ERRORS:', errors.length ? errors.join('\n') : 'none');
 await browser.close();
