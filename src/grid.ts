@@ -18,6 +18,43 @@ const PUSH = 0.62; // in cell units
 const PUSH_RADIUS = 2.4; // in cell units
 const DECAY = 3.1; // energy falloff per second
 
+// Colour wave: a played note flares yellow, then rolls green -> violet ->
+// back to white, and the same ripple spreads outward ring by ring.
+const WAVE_RADIUS = 4; // cells
+const WAVE_RING_DELAY = 0.085; // seconds per ring
+const WAVE_DURATION = 0.85; // seconds for one cell's colour cycle
+const WAVE_LIFE = WAVE_DURATION + WAVE_RADIUS * WAVE_RING_DELAY;
+const MAX_WAVES = 40;
+
+type RGB = [number, number, number];
+const WAVE_STOPS: RGB[] = [
+  [255, 214, 0], // yellow
+  [80, 255, 130], // green
+  [176, 107, 255], // violet
+  [255, 255, 255], // white
+];
+
+/** Colour at 0..1 through the wave cycle. */
+function waveColor(phase: number): RGB {
+  const t = Math.min(0.9999, Math.max(0, phase)) * (WAVE_STOPS.length - 1);
+  const i = Math.floor(t);
+  const f = t - i;
+  const a = WAVE_STOPS[i];
+  const b = WAVE_STOPS[i + 1];
+  return [
+    a[0] + (b[0] - a[0]) * f,
+    a[1] + (b[1] - a[1]) * f,
+    a[2] + (b[2] - a[2]) * f,
+  ];
+}
+
+interface Wave {
+  r: number;
+  c: number;
+  t: number;
+  amp: number;
+}
+
 interface Layout {
   cell: number;
   ox: number;
@@ -39,7 +76,8 @@ export class Grid {
   energy = new Float32Array(ROWS * COLS);
   private layout: Layout = { cell: 0, ox: 0, oy: 0, cx: 0, cy: 0, R: 1 };
   private time = 0;
-  private glow: HTMLCanvasElement | null = null;
+  private glow = new Map<string, HTMLCanvasElement>();
+  private waves: Wave[] = [];
 
   at(r: number, c: number): number {
     return this.cells[r * COLS + c];
@@ -54,11 +92,33 @@ export class Grid {
     if (this.cells[i] < v) this.cells[i] = v;
   }
 
-  /** A note just sounded — bloom it. */
+  /** A note just sounded — bloom it and send a colour ripple outward. */
   flash(r: number, c: number, vel: number): void {
     if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
     const i = r * COLS + c;
     this.energy[i] = Math.max(this.energy[i], 0.55 + 0.45 * vel);
+    if (this.waves.length >= MAX_WAVES) this.waves.shift();
+    this.waves.push({ r, c, t: 0, amp: 0.55 + 0.45 * vel });
+  }
+
+  /**
+   * Colour tint for a cell: the strongest ripple currently passing through
+   * it. Returns null when the cell is plain white.
+   */
+  private tintAt(r: number, c: number): { rgb: RGB; amp: number } | null {
+    let best: { rgb: RGB; amp: number } | null = null;
+    for (const w of this.waves) {
+      const d = Math.hypot(r - w.r, c - w.c);
+      if (d > WAVE_RADIUS) continue;
+      const local = w.t - d * WAVE_RING_DELAY;
+      if (local <= 0 || local >= WAVE_DURATION) continue;
+      const phase = local / WAVE_DURATION;
+      // Fade the ripple as it travels out, and ease it away at the end.
+      const amp =
+        w.amp * (1 - d / (WAVE_RADIUS + 1)) * Math.sin(Math.PI * phase) ** 0.6;
+      if (!best || amp > best.amp) best = { rgb: waveColor(phase), amp };
+    }
+    return best;
   }
 
   // Organic brush driven by the finger's fractional position. The cell under
@@ -224,20 +284,26 @@ export class Grid {
     return cell;
   }
 
-  private glowSprite(): HTMLCanvasElement {
-    if (this.glow) return this.glow;
+  /** Halo sprite, cached per (quantised) colour so tinted glows stay cheap. */
+  private glowSprite(rgb: RGB): HTMLCanvasElement {
+    const q = (n: number) => Math.round(n / 32) * 32;
+    const [r, g, b] = [q(rgb[0]), q(rgb[1]), q(rgb[2])];
+    const key = `${r},${g},${b}`;
+    const hit = this.glow.get(key);
+    if (hit) return hit;
+
     const s = 64;
     const cv = document.createElement('canvas');
     cv.width = cv.height = s;
-    const g = cv.getContext('2d')!;
-    const grad = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-    grad.addColorStop(0, 'rgba(255,255,255,0.9)');
-    grad.addColorStop(0.25, 'rgba(255,255,255,0.32)');
-    grad.addColorStop(0.6, 'rgba(255,255,255,0.07)');
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, s, s);
-    this.glow = cv;
+    const cx = cv.getContext('2d')!;
+    const grad = cx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+    grad.addColorStop(0, `rgba(${r},${g},${b},0.9)`);
+    grad.addColorStop(0.25, `rgba(${r},${g},${b},0.32)`);
+    grad.addColorStop(0.6, `rgba(${r},${g},${b},0.07)`);
+    grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    cx.fillStyle = grad;
+    cx.fillRect(0, 0, s, s);
+    this.glow.set(key, cv);
     return cv;
   }
 
@@ -264,6 +330,12 @@ export class Grid {
       R: Math.hypot(gw, gh) / 2,
     };
 
+    // Age the colour ripples and drop the spent ones.
+    for (const w of this.waves) w.t += dt;
+    if (this.waves.length) {
+      this.waves = this.waves.filter((w) => w.t < WAVE_LIFE);
+    }
+
     // Decay flash energy and collect the live sources that bend the field.
     const fade = Math.exp(-DECAY * dt);
     const sources: Source[] = [];
@@ -286,7 +358,6 @@ export class Grid {
 
     ctx.clearRect(0, 0, cssW, cssH);
 
-    const glow = this.glowSprite();
     const pushR = PUSH_RADIUS * cell;
     const baseDot = Math.max(1.6, cell * 0.075);
 
@@ -326,12 +397,32 @@ export class Grid {
         const breathe =
           0.86 + 0.14 * Math.sin(this.time * 1.5 + (r * 0.9 + c * 0.6));
 
+        // Colour ripple passing through this cell, blended toward white.
+        const tint = this.tintAt(r, c);
+        const col: RGB = tint
+          ? [
+              255 + (tint.rgb[0] - 255) * tint.amp,
+              255 + (tint.rgb[1] - 255) * tint.amp,
+              255 + (tint.rgb[2] - 255) * tint.amp,
+            ]
+          : [255, 255, 255];
+        const cs = `${col[0] | 0},${col[1] | 0},${col[2] | 0}`;
+
         if (v <= 0 && e <= 0) {
-          const rad = baseDot * lens * breathe;
-          ctx.fillStyle = `rgba(255,255,255,${(onHead ? 0.5 : 0.2) * breathe})`;
+          const lift = tint ? tint.amp * 0.85 : 0;
+          const rad = baseDot * lens * breathe * (1 + lift * 0.6);
+          const a = ((onHead ? 0.5 : 0.2) + lift * 0.62) * breathe;
+          ctx.fillStyle = `rgba(${cs},${Math.min(1, a)})`;
           ctx.beginPath();
           ctx.arc(sx, sy, rad, 0, Math.PI * 2);
           ctx.fill();
+          if (tint && tint.amp > 0.12) {
+            const gsz = rad * 5;
+            ctx.globalAlpha = Math.min(0.45, tint.amp * 0.5);
+            const sprite = this.glowSprite(tint.rgb);
+            ctx.drawImage(sprite, sx - gsz / 2, sy - gsz / 2, gsz, gsz);
+            ctx.globalAlpha = 1;
+          }
           continue;
         }
 
@@ -343,8 +434,12 @@ export class Grid {
 
         // Halo stays tight so a cluster of hits never washes the screen out.
         const gsz = rad * (3 + 2.6 * e);
-        ctx.globalAlpha = Math.min(0.6, 0.12 * v + 0.34 * e + 0.05 * swell);
-        ctx.drawImage(glow, sx - gsz / 2, sy - gsz / 2, gsz, gsz);
+        ctx.globalAlpha = Math.min(
+          0.6,
+          0.12 * v + 0.34 * e + 0.05 * swell + (tint ? tint.amp * 0.2 : 0)
+        );
+        const sprite = this.glowSprite(tint ? tint.rgb : [255, 255, 255]);
+        ctx.drawImage(sprite, sx - gsz / 2, sy - gsz / 2, gsz, gsz);
         ctx.globalAlpha = 1;
 
         // Radial streak away from the centre while the note is hot.
@@ -357,8 +452,8 @@ export class Grid {
           const tx = sx + (dx / d) * len;
           const ty = sy + (dy / d) * len;
           const g = ctx.createLinearGradient(sx, sy, tx, ty);
-          g.addColorStop(0, `rgba(255,255,255,${0.34 * e})`);
-          g.addColorStop(1, 'rgba(255,255,255,0)');
+          g.addColorStop(0, `rgba(${cs},${0.34 * e})`);
+          g.addColorStop(1, `rgba(${cs},0)`);
           ctx.strokeStyle = g;
           ctx.lineWidth = rad * 1.1;
           ctx.lineCap = 'round';
@@ -368,7 +463,7 @@ export class Grid {
           ctx.stroke();
         }
 
-        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        ctx.fillStyle = `rgba(${cs},${alpha})`;
         ctx.beginPath();
         ctx.arc(sx, sy, rad, 0, Math.PI * 2);
         ctx.fill();
