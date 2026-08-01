@@ -31,8 +31,8 @@ await page.evaluate(() => {
 
 // sample the brightest non-grey pixel over time
 const samples = [];
-for (let i = 0; i < 8; i++) {
-  await page.waitForTimeout(110);
+for (let i = 0; i < 12; i++) {
+  await page.waitForTimeout(45);
   const s = await page.evaluate(() => {
     const cv = document.getElementById('grid');
     const g = cv.getContext('2d');
@@ -51,7 +51,7 @@ for (let i = 0; i < 8; i++) {
   await page.screenshot({ path: `scripts/wave${i}.png` });
 }
 for (const [i, s] of samples.entries())
-  console.log(`t=${((i + 1) * 0.11).toFixed(2)}s rgb=${s.rgb.join(',')} sat=${s.sat}`);
+  console.log(`t=${((i + 1) * 0.045).toFixed(2)}s rgb=${s.rgb.join(',')} sat=${s.sat}`);
 console.log('ERRORS:', errors.length ? errors.join('\n') : 'none');
 await browser.close();
 process.exit(errors.length ? 1 : 0);

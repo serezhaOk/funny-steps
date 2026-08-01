@@ -18,34 +18,30 @@ const PUSH = 0.62; // in cell units
 const PUSH_RADIUS = 2.4; // in cell units
 const DECAY = 3.1; // energy falloff per second
 
-// Colour wave: a played note flares yellow, then rolls green -> violet ->
-// back to white, and the same ripple spreads outward ring by ring.
+// Colour wave: a played note strobes yellow, green, violet in hard steps and
+// snaps back to white, and the same flicker spreads outward ring by ring.
 const WAVE_RADIUS = 4; // cells
-const WAVE_RING_DELAY = 0.085; // seconds per ring
-const WAVE_DURATION = 0.85; // seconds for one cell's colour cycle
-const WAVE_LIFE = WAVE_DURATION + WAVE_RADIUS * WAVE_RING_DELAY;
-const MAX_WAVES = 40;
+const WAVE_RING_DELAY = 0.05; // seconds per ring
+const WAVE_STEP = 0.09; // seconds each colour is held
+const MAX_WAVES = 48;
 
 type RGB = [number, number, number];
 const WAVE_STOPS: RGB[] = [
   [255, 214, 0], // yellow
   [80, 255, 130], // green
   [176, 107, 255], // violet
-  [255, 255, 255], // white
 ];
 
-/** Colour at 0..1 through the wave cycle. */
+const WAVE_DURATION = WAVE_STOPS.length * WAVE_STEP;
+const WAVE_LIFE = WAVE_DURATION + WAVE_RADIUS * WAVE_RING_DELAY;
+
+/** Hard-stepped colour at 0..1 through the cycle — no blending. */
 function waveColor(phase: number): RGB {
-  const t = Math.min(0.9999, Math.max(0, phase)) * (WAVE_STOPS.length - 1);
-  const i = Math.floor(t);
-  const f = t - i;
-  const a = WAVE_STOPS[i];
-  const b = WAVE_STOPS[i + 1];
-  return [
-    a[0] + (b[0] - a[0]) * f,
-    a[1] + (b[1] - a[1]) * f,
-    a[2] + (b[2] - a[2]) * f,
-  ];
+  const i = Math.min(
+    WAVE_STOPS.length - 1,
+    Math.max(0, Math.floor(phase * WAVE_STOPS.length))
+  );
+  return WAVE_STOPS[i];
 }
 
 interface Wave {
@@ -113,9 +109,11 @@ export class Grid {
       const local = w.t - d * WAVE_RING_DELAY;
       if (local <= 0 || local >= WAVE_DURATION) continue;
       const phase = local / WAVE_DURATION;
-      // Fade the ripple as it travels out, and ease it away at the end.
-      const amp =
-        w.amp * (1 - d / (WAVE_RADIUS + 1)) * Math.sin(Math.PI * phase) ** 0.6;
+      // Full-strength while it passes — the flicker cuts, it does not fade.
+      // Each colour also strobes within its own slot for a harder blink.
+      const sub = (local % WAVE_STEP) / WAVE_STEP;
+      const strobe = sub < 0.62 ? 1 : 0.4;
+      const amp = w.amp * (1 - (d / (WAVE_RADIUS + 1)) * 0.55) * strobe;
       if (!best || amp > best.amp) best = { rgb: waveColor(phase), amp };
     }
     return best;
