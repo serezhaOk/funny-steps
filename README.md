@@ -4,7 +4,7 @@ A mobile-first note-matrix sequencer for the browser. Paint notes into a
 **10 × 16** grid — 10 scale notes across, 16 steps down — and they loop,
 pitch-mapped across your own samples. Pure Web Audio, no audio frameworks.
 
-Live: https://serezhaok.github.io/funny-steps/
+Live: https://sqia.serezhaok.com
 
 ## How it works
 
