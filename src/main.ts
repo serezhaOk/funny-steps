@@ -4,6 +4,13 @@ import { Grid } from './grid';
 import { COLS, NOTE_NAMES, SCALES, columnMidi, rateTable } from './scales';
 import { SAMPLES, type SampleDef } from './samples';
 import { Synths, SYNTHS, type SynthId } from './synths';
+import {
+  initAuth,
+  isSignedIn,
+  onAuthChange,
+  signInWithEmail,
+  signInWithGoogle,
+} from './auth';
 
 const $ = <T extends HTMLElement>(sel: string) =>
   document.querySelector(sel) as T;
@@ -81,6 +88,9 @@ $('#boot-btn').addEventListener('click', async () => {
     $('#app').hidden = false;
     buildMixerUI();
     wire();
+    wireAuth();
+    // Non-blocking: the machine plays while the session is restored.
+    initAuth().catch(() => {});
     refreshLabels();
     transport.onStep = onStep;
     transport.start();
@@ -167,6 +177,7 @@ function fitCanvas(): void {
 type Rect = [number, number, number, number];
 
 const GAP = 10;
+const SAVE_ROOM = 62; // bottom strip in the mixer for the save tile
 
 /**
  * Where track i sits in the mixer. Two tracks stack vertically (taller slots
@@ -176,7 +187,8 @@ function quadrant(i: number): Rect {
   const cols = TRACKS <= 2 ? 1 : 2;
   const rows = Math.ceil(TRACKS / cols);
   const w = (cssW - GAP * (cols + 1)) / cols;
-  const h = (cssH - GAP * (rows + 1)) / rows;
+  // Leave a strip at the bottom for the save tile.
+  const h = (cssH - SAVE_ROOM - GAP * (rows + 1)) / rows;
   const x = GAP + (i % cols) * (w + GAP);
   const y = GAP + Math.floor(i / cols) * (h + GAP);
   return [x, y, w, h];
@@ -291,6 +303,20 @@ function buildMixerUI(): void {
     slot.append(name, mute);
     host.appendChild(slot);
   }
+
+  // Save tile: an account feature, so it opens the sheet while signed out.
+  const save = document.createElement('button');
+  save.id = 'save-tile';
+  save.textContent = 'SAVE PROJECT';
+  save.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!requireAccount()) return;
+    // Saving itself lands in the next pass.
+    save.textContent = 'SAVED SOON…';
+    window.setTimeout(() => (save.textContent = 'SAVE PROJECT'), 1200);
+  });
+  host.appendChild(save);
+
   positionMixerUI();
   refreshMixerUI();
 }
@@ -330,6 +356,72 @@ function openTrack(i: number): void {
   activeTrack = i;
   setMixer(false);
   refreshLabels();
+}
+
+// -------------------------------------------------------------------- auth ---
+// Tempo, key and saving are account features: tapping them while signed out
+// opens the sign-up sheet instead of changing anything.
+function requireAccount(): boolean {
+  if (isSignedIn()) return true;
+  openAuth();
+  return false;
+}
+
+function openAuth(): void {
+  $('#auth').hidden = false;
+  setAuthMsg('');
+}
+
+function closeAuth(): void {
+  $('#auth').hidden = true;
+}
+
+function setAuthMsg(text: string, error = false): void {
+  const el = $('#auth-msg');
+  el.textContent = text;
+  el.hidden = !text;
+  el.classList.toggle('error', error);
+}
+
+function wireAuth(): void {
+  $('#auth-close').addEventListener('click', closeAuth);
+  $('.auth-scrim').addEventListener('click', closeAuth);
+
+  $('#auth-google').addEventListener('click', async () => {
+    const btn = $<HTMLButtonElement>('#auth-google');
+    btn.disabled = true;
+    try {
+      await signInWithGoogle(); // redirects away on success
+    } catch (err) {
+      setAuthMsg(err instanceof Error ? err.message : String(err), true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $<HTMLFormElement>('#auth-email-form').addEventListener(
+    'submit',
+    async (e) => {
+      e.preventDefault();
+      const input = $<HTMLInputElement>('#auth-email');
+      const email = input.value.trim();
+      if (!/^\S+@\S+\.\S+$/.test(email)) {
+        setAuthMsg('Enter a valid email address.', true);
+        return;
+      }
+      setAuthMsg('Sending a sign-in link…');
+      try {
+        await signInWithEmail(email);
+        setAuthMsg(`Check ${email} for your sign-in link.`);
+      } catch (err) {
+        setAuthMsg(err instanceof Error ? err.message : String(err), true);
+      }
+    }
+  );
+
+  onAuthChange((s) => {
+    if (s) closeAuth();
+  });
 }
 
 // ------------------------------------------------------------------- input ---
@@ -384,6 +476,7 @@ function wire(): void {
   let bstart = 0;
   let bmoved = false;
   bpm.addEventListener('pointerdown', (e) => {
+    if (!requireAccount()) return;
     bx = (e as PointerEvent).clientX;
     bstart = transport.bpm;
     bmoved = false;
@@ -405,11 +498,13 @@ function wire(): void {
   });
 
   $('#root').addEventListener('click', () => {
+    if (!requireAccount()) return;
     rootPc = (rootPc + 1) % 12;
     updateRates();
     refreshLabels();
   });
   $('#scale').addEventListener('click', () => {
+    if (!requireAccount()) return;
     scaleIdx = (scaleIdx + 1) % SCALES.length;
     updateRates();
     refreshLabels();
