@@ -414,17 +414,11 @@ function wireLanding(): void {
     location.reload();
   });
 
-  $('#about-btn').addEventListener('click', () => {
-    const t = $('#about-text');
-    t.hidden = !t.hidden;
-  });
-
   // Swap the landing between its signed-out and signed-in faces.
   onAuthChange((session) => {
     const signedIn = session !== null;
     $('#signed-out').hidden = signedIn;
     $('#signed-in').hidden = !signedIn;
-    $('#about-btn').hidden = signedIn;
     if (signedIn) {
       setLandingMsg('');
       $('#who-email').textContent = session?.user.email ?? '';

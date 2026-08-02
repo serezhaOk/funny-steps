@@ -34,10 +34,12 @@ const msg = await page.$eval('#landing-msg', (e) => e.textContent);
 console.log('EMAIL: revealed=', revealed, ' msg=', JSON.stringify(msg));
 await page.screenshot({ path: 'scripts/landing-email.png' });
 
-// "What is SQIA?" toggles the blurb
-await page.click('#about-btn');
-const about = await page.evaluate(() => !document.getElementById('about-text').hidden);
-console.log('ABOUT_TOGGLES:', about);
+// "What is SQIA?" points at the reel and opens in a new tab
+const about = await page.evaluate(() => {
+  const a = document.getElementById('about-btn');
+  return { href: a.getAttribute('href'), target: a.getAttribute('target') };
+});
+console.log('ABOUT_LINK:', JSON.stringify(about));
 
 // a fake session must flip the landing to its signed-in face
 await page.evaluate(() => {
@@ -55,7 +57,7 @@ console.log('AFTER_ENTER:', JSON.stringify(entered));
 
 const ok = state.landing && !state.app && state.signedOut && !state.signedIn &&
   state.wordmark === 'SQIA' && revealed && /valid email/i.test(msg) &&
-  about && entered.app && !entered.landing && entered.ctx === 'running';
+  /instagram\.com\/reel\//.test(about.href) && about.target === '_blank' && entered.app && !entered.landing && entered.ctx === 'running';
 if (!ok) console.log('FAIL: landing flow');
 console.log('ERRORS:', errors.length ? errors.join('\n') : 'none');
 await browser.close();

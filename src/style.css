@@ -172,19 +172,11 @@ button {
 }
 
 .about {
+  display: inline-block;
   margin-top: 46px;
   font-size: 0.9rem;
   color: #d9d9d9;
   text-decoration: underline;
-}
-.about-text {
-  margin-top: 14px;
-  font-size: 0.85rem;
-  line-height: 1.5;
-  color: #8a8a8a;
-}
-.about-text[hidden] {
-  display: none;
 }
 
 #boot-err {
