@@ -1,6 +1,6 @@
-# FUNNY⚡STEPS
+# SQIA
 
-A mobile-first note-matrix sequencer for the browser. Paint notes into a
+Built for sound accidents — a mobile-first note-matrix sequencer for the browser. Paint notes into a
 **10 × 16** grid — 10 scale notes across, 16 steps down — and they loop,
 pitch-mapped across your own samples. Pure Web Audio, no audio frameworks.
 
@@ -31,5 +31,7 @@ CHROMIUM_PATH=/path/to/chromium node scripts/smoke.mjs   # headless smoke test
 ```
 
 Deploys to GitHub Pages on every push to `main`
-(`.github/workflows/deploy.yml`). Audio starts only after the TAP TO START
-gesture (iOS autoplay policy).
+(`.github/workflows/deploy.yml`). Signing in is the front door: the landing screen offers Google or a
+passwordless email link, and the tap on Enter is what unlocks audio (iOS
+needs a gesture). Database schema and row level security live in
+`supabase/schema.sql`.

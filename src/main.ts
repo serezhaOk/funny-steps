@@ -6,10 +6,10 @@ import { SAMPLES, type SampleDef } from './samples';
 import { Synths, SYNTHS, type SynthId } from './synths';
 import {
   initAuth,
-  isSignedIn,
   onAuthChange,
   signInWithEmail,
   signInWithGoogle,
+  signOut,
 } from './auth';
 
 const $ = <T extends HTMLElement>(sel: string) =>
@@ -76,21 +76,24 @@ function updateRates(): void {
 }
 updateRates();
 
-// ------------------------------------------------------------------ boot ----
-$('#boot-btn').addEventListener('click', async () => {
-  const btn = $('#boot-btn');
-  btn.textContent = 'LOADING…';
+// ---------------------------------------------------------------- landing ---
+// Signing in is the front door: the machine only boots once there is a
+// session, and the tap on Enter is what unlocks audio (iOS needs a gesture).
+let booted = false;
+
+async function enterApp(): Promise<void> {
+  if (booted) return;
+  const btn = $<HTMLButtonElement>('#enter-btn');
+  btn.disabled = true;
+  btn.textContent = 'Loading…';
   try {
     await audio.start();
-    // Boot straight into the synths: no sample download to wait on.
     await synths.init(audio.ctx, audio.output);
-    $('#boot').hidden = true;
+    booted = true;
+    $('#landing').hidden = true;
     $('#app').hidden = false;
     buildMixerUI();
     wire();
-    wireAuth();
-    // Non-blocking: the machine plays while the session is restored.
-    initAuth().catch(() => {});
     refreshLabels();
     transport.onStep = onStep;
     transport.start();
@@ -106,11 +109,12 @@ $('#boot-btn').addEventListener('click', async () => {
       ctx: () => audio.ctx.state,
     };
   } catch (err) {
-    btn.textContent = 'TAP TO START';
+    btn.disabled = false;
+    btn.textContent = 'Enter';
     const w = window as unknown as { __bootErr?: (m: unknown) => void };
     w.__bootErr?.(err instanceof Error ? `${err.name}: ${err.message}` : err);
   }
-});
+}
 
 // -------------------------------------------------------------- sequencer ----
 // Random within the frame: full accents always fire; soft bleed cells fire
@@ -310,7 +314,6 @@ function buildMixerUI(): void {
   save.textContent = 'SAVE PROJECT';
   save.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (!requireAccount()) return;
     // Saving itself lands in the next pass.
     save.textContent = 'SAVED SOON…';
     window.setTimeout(() => (save.textContent = 'SAVE PROJECT'), 1200);
@@ -359,68 +362,73 @@ function openTrack(i: number): void {
 }
 
 // -------------------------------------------------------------------- auth ---
-// Tempo, key and saving are account features: tapping them while signed out
-// opens the sign-up sheet instead of changing anything.
-function requireAccount(): boolean {
-  if (isSignedIn()) return true;
-  openAuth();
-  return false;
-}
-
-function openAuth(): void {
-  $('#auth').hidden = false;
-  setAuthMsg('');
-}
-
-function closeAuth(): void {
-  $('#auth').hidden = true;
-}
-
-function setAuthMsg(text: string, error = false): void {
-  const el = $('#auth-msg');
+function setLandingMsg(text: string, error = false): void {
+  const el = $('#landing-msg');
   el.textContent = text;
   el.hidden = !text;
   el.classList.toggle('error', error);
 }
 
-function wireAuth(): void {
-  $('#auth-close').addEventListener('click', closeAuth);
-  $('.auth-scrim').addEventListener('click', closeAuth);
-
-  $('#auth-google').addEventListener('click', async () => {
-    const btn = $<HTMLButtonElement>('#auth-google');
+function wireLanding(): void {
+  $('#google-btn').addEventListener('click', async () => {
+    const btn = $<HTMLButtonElement>('#google-btn');
     btn.disabled = true;
     try {
       await signInWithGoogle(); // redirects away on success
     } catch (err) {
-      setAuthMsg(err instanceof Error ? err.message : String(err), true);
-    } finally {
       btn.disabled = false;
+      setLandingMsg(err instanceof Error ? err.message : String(err), true);
     }
   });
 
-  $<HTMLFormElement>('#auth-email-form').addEventListener(
-    'submit',
-    async (e) => {
-      e.preventDefault();
-      const input = $<HTMLInputElement>('#auth-email');
-      const email = input.value.trim();
-      if (!/^\S+@\S+\.\S+$/.test(email)) {
-        setAuthMsg('Enter a valid email address.', true);
-        return;
-      }
-      setAuthMsg('Sending a sign-in link…');
-      try {
-        await signInWithEmail(email);
-        setAuthMsg(`Check ${email} for your sign-in link.`);
-      } catch (err) {
-        setAuthMsg(err instanceof Error ? err.message : String(err), true);
-      }
-    }
-  );
+  // "Continue with email" reveals the field; submitting mails a sign-in link.
+  $('#email-btn').addEventListener('click', () => {
+    $('#email-form').hidden = false;
+    $<HTMLInputElement>('#email-input').focus();
+  });
 
-  onAuthChange((s) => {
-    if (s) closeAuth();
+  $<HTMLFormElement>('#email-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = $<HTMLInputElement>('#email-input');
+    const email = input.value.trim();
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      setLandingMsg('Enter a valid email address.', true);
+      return;
+    }
+    const send = $<HTMLButtonElement>('#email-send');
+    send.disabled = true;
+    setLandingMsg('Sending a sign-in link…');
+    try {
+      await signInWithEmail(email);
+      setLandingMsg(`Check ${email} for your sign-in link.`);
+    } catch (err) {
+      setLandingMsg(err instanceof Error ? err.message : String(err), true);
+    } finally {
+      send.disabled = false;
+    }
+  });
+
+  $('#enter-btn').addEventListener('click', enterApp);
+  $('#signout').addEventListener('click', async () => {
+    await signOut();
+    location.reload();
+  });
+
+  $('#about-btn').addEventListener('click', () => {
+    const t = $('#about-text');
+    t.hidden = !t.hidden;
+  });
+
+  // Swap the landing between its signed-out and signed-in faces.
+  onAuthChange((session) => {
+    const signedIn = session !== null;
+    $('#signed-out').hidden = signedIn;
+    $('#signed-in').hidden = !signedIn;
+    $('#about-btn').hidden = signedIn;
+    if (signedIn) {
+      setLandingMsg('');
+      $('#who-email').textContent = session?.user.email ?? '';
+    }
   });
 }
 
@@ -476,7 +484,6 @@ function wire(): void {
   let bstart = 0;
   let bmoved = false;
   bpm.addEventListener('pointerdown', (e) => {
-    if (!requireAccount()) return;
     bx = (e as PointerEvent).clientX;
     bstart = transport.bpm;
     bmoved = false;
@@ -498,13 +505,11 @@ function wire(): void {
   });
 
   $('#root').addEventListener('click', () => {
-    if (!requireAccount()) return;
     rootPc = (rootPc + 1) % 12;
     updateRates();
     refreshLabels();
   });
   $('#scale').addEventListener('click', () => {
-    if (!requireAccount()) return;
     scaleIdx = (scaleIdx + 1) % SCALES.length;
     updateRates();
     refreshLabels();
@@ -545,3 +550,10 @@ function refreshLabels(): void {
   $('#scale').textContent = SCALES[scaleIdx].name.toUpperCase();
   $('#sample').textContent = voiceLabel(VOICES[track().voiceIdx]);
 }
+
+// ------------------------------------------------------------------ start ---
+wireLanding();
+initAuth().catch((err) => {
+  const w = window as unknown as { __bootErr?: (m: unknown) => void };
+  w.__bootErr?.(err instanceof Error ? err.message : err);
+});

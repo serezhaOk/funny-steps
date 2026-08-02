@@ -12,7 +12,12 @@ page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
 
 await page.goto(URL);
-await page.click('#boot-btn');
+// Sign-in is faked at the DOM level: these suites test the machine, not auth.
+await page.evaluate(() => {
+  document.getElementById('signed-out').hidden = true;
+  document.getElementById('signed-in').hidden = false;
+});
+await page.click('#enter-btn');
 await page.waitForSelector('#app:not([hidden])', { timeout: 10000 });
 await page.click('#rndm');
 
