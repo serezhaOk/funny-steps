@@ -1,6 +1,6 @@
 # Notices
 
-SQIA is copyright (c) 2026 serezhaOk. All rights reserved — see [LICENSE](LICENSE).
+SQIA is copyright (c) 2026 Sergei Diuzhev. All rights reserved — see [LICENSE](LICENSE).
 
 The following third-party components are used under their own licences. None
 of them is covered by SQIA's licence, and nothing in SQIA's licence restricts

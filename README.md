@@ -38,7 +38,7 @@ needs a gesture). Database schema and row level security live in
 
 ## Copyright
 
-Copyright © 2026 serezhaOk. All rights reserved.
+Copyright © 2026 Sergei Diuzhev. All rights reserved.
 
 SQIA is **not** open source. The source is public so the app can be served
 from GitHub Pages and so people can read it — that grants no licence to copy,

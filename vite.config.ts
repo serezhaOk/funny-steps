@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 
 // Survives minification, so the shipped bundles carry the notice too.
 const banner = `/*!
- * SQIA — copyright (c) 2026 serezhaOk <serezhaok@gmail.com>.
+ * SQIA — copyright (c) 2026 Sergei Diuzhev <serezhaok@gmail.com>.
  * All rights reserved. Not open source: no licence is granted to copy,
  * modify, redistribute or host this code.
  * https://github.com/serezhaOk/funny-steps/blob/main/LICENSE
