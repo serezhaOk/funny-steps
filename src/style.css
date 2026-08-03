@@ -376,6 +376,34 @@ button {
   background: #e2dede;
 }
 
+/* On a wide screen the cards stop stretching: fixed 200x200 tiles, laid out
+   from the centre, and the create button matches their width. */
+@media (min-width: 768px) {
+  #p-list {
+    grid-template-columns: repeat(auto-fill, 200px);
+    justify-content: center;
+    max-width: 848px;
+    margin-inline: auto;
+  }
+  #p-list.empty {
+    grid-template-columns: 200px;
+  }
+  .p-card {
+    width: 200px;
+    height: 200px;
+    aspect-ratio: auto;
+  }
+  .p-empty {
+    min-height: 200px;
+  }
+  .p-create {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: 200px;
+  }
+}
+
 /* context menus (card actions, account) */
 .p-menu {
   position: fixed;
