@@ -396,16 +396,31 @@ const ctx = canvas.getContext('2d')!;
 let cssW = 0;
 let cssH = 0;
 
-function fitCanvas(): void {
+// Browsers refuse to rasterise a canvas past a certain size, and they do it
+// silently: on a wide retina display a full-window canvas at devicePixelRatio
+// blew past ~18 megapixels and simply drew nothing, leaving the chrome
+// visible and the grid blank. Cap the backing store instead.
+const MAX_CANVAS_PIXELS = 8_000_000;
+const MAX_CANVAS_SIDE = 4096;
+
+function backingScale(w: number, h: number): number {
   const dpr = window.devicePixelRatio || 1;
+  if (w <= 0 || h <= 0) return dpr;
+  const byArea = Math.sqrt(MAX_CANVAS_PIXELS / (w * h));
+  const bySide = MAX_CANVAS_SIDE / Math.max(w, h);
+  return Math.max(1, Math.min(dpr, byArea, bySide));
+}
+
+function fitCanvas(): void {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
   if (w !== cssW || h !== cssH) {
     cssW = w;
     cssH = h;
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const scale = backingScale(w, h);
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
   }
 }
 
@@ -452,6 +467,8 @@ const ease = (t: number) =>
 let lastFrame = 0;
 
 function frame(now: number): void {
+  // Schedule the next frame first: if drawing throws, the loop survives.
+  requestAnimationFrame(frame);
   const dt = lastFrame ? Math.min(0.05, (now - lastFrame) / 1000) : 0.016;
   lastFrame = now;
   fitCanvas();
@@ -501,7 +518,6 @@ function frame(now: number): void {
       tracks[i].muted ? alpha * 0.35 : alpha
     );
   }
-  requestAnimationFrame(frame);
 }
 
 // -------------------------------------------------------------- mixer UI ----
