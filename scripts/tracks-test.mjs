@@ -20,12 +20,8 @@ page.on('console', (m) => {
 });
 
 await page.goto(URL);
-// Sign-in is faked at the DOM level: these suites test the machine, not auth.
-await page.evaluate(() => {
-  document.getElementById('signed-out').hidden = true;
-  document.getElementById('signed-in').hidden = false;
-});
-await page.click('#enter-btn');
+// No real session in the sandbox: jump straight to the library.
+await page.evaluate(() => window.__showProjects());
 // Landing -> projects -> a fresh project boots the sequencer.
 await page.waitForSelector('.p-empty, .p-card', { timeout: 15000 });
 await page.click('.p-empty, .p-card');

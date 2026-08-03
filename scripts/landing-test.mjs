@@ -23,7 +23,8 @@ const state = await page.evaluate(() => ({
   landing: !document.getElementById('landing').hidden,
   app: !document.getElementById('app').hidden,
   signedOut: !document.getElementById('signed-out').hidden,
-  signedIn: !document.getElementById('signed-in').hidden,
+  // the Enter screen is gone: a session goes straight to the library
+  hasEnterScreen: !!document.getElementById('signed-in'),
   wordmark: document.querySelector('.wordmark').textContent,
   tagline: document.querySelector('.tagline').textContent.trim(),
 }));
@@ -47,24 +48,20 @@ const about = await page.evaluate(() => {
 });
 console.log('ABOUT_LINK:', JSON.stringify(about));
 
-// a fake session must flip the landing to its signed-in face
-await page.evaluate(() => {
-  document.getElementById('signed-out').hidden = true;
-  document.getElementById('signed-in').hidden = false;
-});
-await page.click('#enter-btn');
-// Enter now lands on the projects library, not straight in the sequencer.
+// A session goes straight to the library — there is no Enter screen.
+await page.evaluate(() => window.__showProjects());
 await page.waitForSelector('#projects:not([hidden])', { timeout: 15000 });
 const entered = await page.evaluate(() => ({
   projects: !document.getElementById('projects').hidden,
   landing: !document.getElementById('landing').hidden,
-  ctx: window.__dbg?.ctx(),
+  // audio has not started yet: it waits for the tap that opens a project
+  audio: window.__dbg ? window.__dbg.ctx() : 'not-started',
 }));
 console.log('AFTER_ENTER:', JSON.stringify(entered));
 
-const ok = state.landing && !state.app && state.signedOut && !state.signedIn &&
+const ok = state.landing && !state.app && state.signedOut && !state.hasEnterScreen &&
   state.wordmark === 'SQIA' && revealed && /valid email/i.test(msg) &&
-  /instagram\.com\/reel\//.test(about.href) && about.target === '_blank' && entered.projects && !entered.landing && entered.ctx === 'running';
+  /instagram\.com\/reel\//.test(about.href) && about.target === '_blank' && entered.projects && !entered.landing && entered.audio === 'not-started';
 if (!ok) console.log('FAIL: landing flow');
 console.log('ERRORS:', errors.length ? errors.join('\n') : 'none');
 await browser.close();

@@ -155,38 +155,31 @@ function resetProject(): void {
 }
 
 // ---------------------------------------------------------------- landing ---
-// Signing in is the front door: the machine only boots once there is a
-// session, and the tap on Enter is what unlocks audio (iOS needs a gesture).
-async function enterApp(): Promise<void> {
-  const btn = $<HTMLButtonElement>('#enter-btn');
-  btn.disabled = true;
-  btn.textContent = 'Loading…';
-  try {
-    await audio.start();
-    await synths.init(audio.ctx, audio.output);
-    $('#landing').hidden = true;
-    buildMixerUI();
-    wire();
-    refreshLabels();
-    transport.onStep = onStep;
-    requestAnimationFrame(frame);
-    (window as unknown as { __dbg?: unknown }).__dbg = {
-      tracks,
-      transport,
-      audio,
-      grid: () => track().grid,
-      activeTrack: () => activeTrack,
-      mixer: () => mixer,
-      filled: () => track().grid.cells.filter((v) => v > 0).length,
-      ctx: () => audio.ctx.state,
-    };
-    await showProjects();
-  } catch (err) {
-    btn.disabled = false;
-    btn.textContent = 'Enter';
-    const w = window as unknown as { __bootErr?: (m: unknown) => void };
-    w.__bootErr?.(err instanceof Error ? `${err.name}: ${err.message}` : err);
-  }
+// Signing in is the front door. There is no separate "Enter" step: a session
+// lands you straight in the library, and opening a project is the user
+// gesture that unlocks audio (iOS won't start a context without one).
+let audioReady = false;
+
+async function ensureAudio(): Promise<void> {
+  if (audioReady) return;
+  await audio.start();
+  await synths.init(audio.ctx, audio.output);
+  buildMixerUI();
+  wire();
+  refreshLabels();
+  transport.onStep = onStep;
+  requestAnimationFrame(frame);
+  audioReady = true;
+  (window as unknown as { __dbg?: unknown }).__dbg = {
+    tracks,
+    transport,
+    audio,
+    grid: () => track().grid,
+    activeTrack: () => activeTrack,
+    mixer: () => mixer,
+    filled: () => track().grid.cells.filter((v) => v > 0).length,
+    ctx: () => audio.ctx.state,
+  };
 }
 
 // ------------------------------------------------------------ projects UI ---
@@ -263,11 +256,13 @@ function openCardMenu(row: ProjectRow, e: PointerEvent): void {
 }
 
 async function openProject(row: ProjectRow): Promise<void> {
+  await ensureAudio();
   applyProject(row);
   await enterSequencer();
 }
 
 async function openNewProject(): Promise<void> {
+  await ensureAudio();
   resetProject();
   try {
     const created = await createProject({ ...snapshot(), name: randomName() });
@@ -289,7 +284,12 @@ async function enterSequencer(): Promise<void> {
 }
 
 function wireProjects(): void {
-  // Test seam: the sandbox has no Supabase, so suites can inject rows.
+  // Test seams: the sandbox has no Supabase, so suites can open the library
+  // without a real session and inject rows.
+  (window as unknown as { __showProjects?: () => void }).__showProjects = () => {
+    $('#landing').hidden = true;
+    void showProjects();
+  };
   (window as unknown as { __setRows?: (r: ProjectRow[]) => void }).__setRows = (
     r
   ) => {
@@ -639,21 +639,12 @@ function wireLanding(): void {
     }
   });
 
-  $('#enter-btn').addEventListener('click', enterApp);
-  $('#signout').addEventListener('click', async () => {
-    await signOut();
-    location.reload();
-  });
-
-  // Swap the landing between its signed-out and signed-in faces.
+  // A session means the library, not the sign-in form.
   onAuthChange((session) => {
-    const signedIn = session !== null;
-    $('#signed-out').hidden = signedIn;
-    $('#signed-in').hidden = !signedIn;
-    if (signedIn) {
-      setLandingMsg('');
-      $('#who-email').textContent = session?.user.email ?? '';
-    }
+    if (!session) return;
+    setLandingMsg('');
+    $('#landing').hidden = true;
+    void showProjects();
   });
 }
 

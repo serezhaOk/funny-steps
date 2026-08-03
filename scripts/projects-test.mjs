@@ -20,11 +20,7 @@ page.on('console', (m) => {
 // Supabase is not reachable from this sandbox, so stub the network layer:
 // listProjects() fails -> empty state, and creates fall back to local play.
 await page.goto(URL);
-await page.evaluate(() => {
-  document.getElementById('signed-out').hidden = true;
-  document.getElementById('signed-in').hidden = false;
-});
-await page.click('#enter-btn');
+await page.evaluate(() => window.__showProjects());
 await page.waitForSelector('#projects:not([hidden])', { timeout: 15000 });
 
 const empty = await page.evaluate(() => ({
