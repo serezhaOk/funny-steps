@@ -9,13 +9,44 @@ import { createClient, type Session } from '@supabase/supabase-js';
 const SUPABASE_URL = 'https://iayngkirvbjlsmgtymnl.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_9cBv22ifdlp-nFn_d4VhoQ_qoNoQOvF';
 
+// Our own storage key, so we can read the cached session before the client
+// boots. Sessions written under the library's default key are migrated once.
+const STORAGE_KEY = 'sqia-auth';
+const LEGACY_KEY = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token`;
+
+try {
+  const legacy = localStorage.getItem(LEGACY_KEY);
+  if (legacy && !localStorage.getItem(STORAGE_KEY)) {
+    localStorage.setItem(STORAGE_KEY, legacy);
+  }
+} catch {
+  // Private mode with storage disabled: sign-in still works for this visit.
+}
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
+    storageKey: STORAGE_KEY,
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
   },
 });
+
+/**
+ * Is a session cached on this device? Read straight from storage, with no
+ * network round trip, so a returning user goes to the library instead of
+ * watching the sign-in screen while the token is confirmed.
+ */
+export function peekSession(): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { refresh_token?: unknown };
+    return typeof parsed?.refresh_token === 'string';
+  } catch {
+    return false;
+  }
+}
 
 /** Where the provider sends the user back — works on Pages and locally. */
 const redirectTo = () => `${location.origin}${location.pathname}`;
@@ -54,12 +85,35 @@ export function consumeAuthError(): string | null {
   return code ? `${text} (${code})` : text;
 }
 
+let retryArmed = false;
+
+function retryWhenOnline(): void {
+  if (retryArmed) return;
+  retryArmed = true;
+  window.addEventListener(
+    'online',
+    () => {
+      retryArmed = false;
+      void supabase.auth.refreshSession();
+    },
+    { once: true }
+  );
+}
+
 /** Read any existing session and keep it in sync from then on. */
 export async function initAuth(): Promise<void> {
   const { data } = await supabase.auth.getSession();
   session = data.session;
   listeners.forEach((fn) => fn(session));
-  supabase.auth.onAuthStateChange((_event, s) => {
+  supabase.auth.onAuthStateChange((event, s) => {
+    // A token refresh that failed because the device is offline must not
+    // throw the user back to the sign-in screen: the refresh token on disk
+    // is still good, so hold the session and retry once we're back.
+    if (!s && session && !navigator.onLine) {
+      retryWhenOnline();
+      return;
+    }
+    if (!s && event !== 'SIGNED_OUT' && event !== 'INITIAL_SESSION') return;
     session = s;
     listeners.forEach((fn) => fn(session));
   });

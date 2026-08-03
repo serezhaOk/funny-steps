@@ -9,6 +9,7 @@ import {
   currentSession,
   initAuth,
   onAuthChange,
+  peekSession,
   signInWithEmail,
   signInWithGoogle,
   signOut,
@@ -607,6 +608,12 @@ function openTrack(i: number): void {
 }
 
 // -------------------------------------------------------------------- auth ---
+// True once a session has taken us past the sign-in screen. Losing the
+// session after that (signing out, or a refresh token the server rejected)
+// is what sends the user back; a null session before it is just the
+// starting state, and the test seams get past the landing without one.
+let signedInUI = false;
+
 function setLandingMsg(text: string, error = false): void {
   const el = $('#landing-msg');
   el.textContent = text;
@@ -653,12 +660,20 @@ function wireLanding(): void {
     }
   });
 
-  // A session means the library, not the sign-in form.
+  // A session means the library, not the sign-in form — and losing one
+  // (signing out, or a refresh token the server rejected) means the reverse.
   onAuthChange((session) => {
-    if (!session) return;
-    setLandingMsg('');
-    $('#landing').hidden = true;
-    void showProjects();
+    if (session) {
+      signedInUI = true;
+      setLandingMsg('');
+      $('#landing').hidden = true;
+      void showProjects();
+    } else if (signedInUI) {
+      signedInUI = false;
+      $('#projects').hidden = true;
+      $('#app').hidden = true;
+      $('#landing').hidden = false;
+    }
   });
 }
 
@@ -793,6 +808,14 @@ function refreshLabels(): void {
 // ------------------------------------------------------------------ start ---
 wireLanding();
 wireProjects();
+// Go by the session cached on this device before the network confirms it:
+// a returning user should never see the sign-in screen flash past, and the
+// library still opens when Supabase is slow or unreachable.
+if (peekSession()) {
+  signedInUI = true;
+  $('#landing').hidden = true;
+  void showProjects();
+}
 // A provider that bounced us back with an error would otherwise just show
 // the sign-in form again, with the reason buried in the URL.
 const authError = consumeAuthError();
