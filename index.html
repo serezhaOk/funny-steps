@@ -8,6 +8,17 @@
     />
     <meta name="theme-color" content="#000000" />
     <title>SQIA</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- display=block so a slow font never flashes the raw ligature text -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=block"
+      rel="stylesheet"
+    />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◼</text></svg>" />
   </head>
   <body>
@@ -84,11 +95,34 @@
       <pre id="boot-err" hidden></pre>
     </div>
 
+
+    <div id="projects" hidden>
+      <header class="p-head">
+        <span class="p-logo" aria-hidden="true">
+          <i></i><i></i><i></i><i></i>
+        </span>
+        <button id="profile-btn" class="p-profile" aria-label="Account">
+          <span class="material-symbols-outlined">emoticon</span>
+        </button>
+      </header>
+      <h1 class="p-title">Projects</h1>
+      <div id="p-list"></div>
+      <button id="create-new" class="p-create" hidden>+ Create new</button>
+      <div id="p-menu" class="p-menu" hidden>
+        <button data-act="rename">Rename</button>
+        <button data-act="delete" class="danger">Delete</button>
+      </div>
+      <div id="p-account" class="p-menu p-account" hidden>
+        <span id="p-account-email"></span>
+        <button data-act="signout">Log out</button>
+      </div>
+    </div>
+
     <div id="app" hidden>
       <header>
         <button id="bpm" class="lbl">120 BPM</button>
         <button id="view-toggle" aria-label="tracks">
-          <span></span><span></span><span></span><span></span>
+          <span></span><span></span>
         </button>
         <div class="key">
           <button id="root" class="lbl">A</button>

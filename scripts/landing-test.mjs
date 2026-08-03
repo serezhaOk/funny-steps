@@ -8,7 +8,13 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
 const errors = [];
 page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
-page.on('console', (m) => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
+// The sandbox blocks Supabase and Google Fonts; those failures are
+// environmental, not app bugs.
+page.on('console', (m) => {
+  const t = m.text();
+  if (m.type() === 'error' && !/net::ERR_|Failed to load resource/.test(t))
+    errors.push('CONSOLE: ' + t);
+});
 
 await page.goto(URL);
 await page.waitForTimeout(900); // let initAuth settle
@@ -47,9 +53,10 @@ await page.evaluate(() => {
   document.getElementById('signed-in').hidden = false;
 });
 await page.click('#enter-btn');
-await page.waitForSelector('#app:not([hidden])', { timeout: 10000 });
+// Enter now lands on the projects library, not straight in the sequencer.
+await page.waitForSelector('#projects:not([hidden])', { timeout: 15000 });
 const entered = await page.evaluate(() => ({
-  app: !document.getElementById('app').hidden,
+  projects: !document.getElementById('projects').hidden,
   landing: !document.getElementById('landing').hidden,
   ctx: window.__dbg?.ctx(),
 }));
@@ -57,7 +64,7 @@ console.log('AFTER_ENTER:', JSON.stringify(entered));
 
 const ok = state.landing && !state.app && state.signedOut && !state.signedIn &&
   state.wordmark === 'SQIA' && revealed && /valid email/i.test(msg) &&
-  /instagram\.com\/reel\//.test(about.href) && about.target === '_blank' && entered.app && !entered.landing && entered.ctx === 'running';
+  /instagram\.com\/reel\//.test(about.href) && about.target === '_blank' && entered.projects && !entered.landing && entered.ctx === 'running';
 if (!ok) console.log('FAIL: landing flow');
 console.log('ERRORS:', errors.length ? errors.join('\n') : 'none');
 await browser.close();

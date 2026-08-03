@@ -5,12 +5,24 @@ import { COLS, NOTE_NAMES, SCALES, columnMidi, rateTable } from './scales';
 import { SAMPLES, type SampleDef } from './samples';
 import { Synths, SYNTHS, type SynthId } from './synths';
 import {
+  currentSession,
   initAuth,
   onAuthChange,
   signInWithEmail,
   signInWithGoogle,
   signOut,
 } from './auth';
+import {
+  createProject,
+  deleteProject,
+  listProjects,
+  makeAutosave,
+  randomName,
+  renameProject,
+  saveProject,
+  type ProjectRow,
+  type TrackSnapshot,
+} from './projects';
 
 const $ = <T extends HTMLElement>(sel: string) =>
   document.querySelector(sel) as T;
@@ -76,27 +88,87 @@ function updateRates(): void {
 }
 updateRates();
 
+// --------------------------------------------------------------- projects ---
+let projectId: string | null = null;
+const autosave = makeAutosave();
+
+function snapshot(): {
+  bpm: number;
+  root_pc: number;
+  scale: string;
+  tracks: TrackSnapshot[];
+} {
+  return {
+    bpm: transport.bpm,
+    root_pc: rootPc,
+    scale: SCALES[scaleIdx].name,
+    tracks: tracks.map((t) => ({
+      voiceIdx: t.voiceIdx,
+      muted: t.muted,
+      // two decimals is plenty for an intensity and keeps the row small
+      cells: Array.from(t.grid.cells, (v) => Math.round(v * 100) / 100),
+    })),
+  };
+}
+
+/** Every edit while playing funnels through here. */
+function touch(): void {
+  if (!projectId) return;
+  const id = projectId;
+  autosave(() => saveProject(id, snapshot()));
+}
+
+function applyProject(p: ProjectRow): void {
+  projectId = p.id;
+  transport.bpm = p.bpm;
+  rootPc = p.root_pc;
+  const idx = SCALES.findIndex((sc) => sc.name === p.scale);
+  scaleIdx = idx >= 0 ? idx : 0;
+  p.tracks?.forEach((snap, i) => {
+    const t = tracks[i];
+    if (!t) return;
+    t.voiceIdx = snap.voiceIdx ?? t.voiceIdx;
+    t.muted = !!snap.muted;
+    t.grid.clear();
+    snap.cells?.forEach((v, c) => {
+      if (v > 0) t.grid.cells[c] = v;
+    });
+  });
+  activeTrack = 0;
+  updateRates();
+}
+
+function resetProject(): void {
+  projectId = null;
+  transport.bpm = 120;
+  rootPc = 9;
+  scaleIdx = 0;
+  tracks.forEach((t, i) => {
+    t.grid.clear();
+    t.muted = false;
+    t.voiceIdx = VOICES.findIndex(
+      (v) => v.kind === 'synth' && v.id === DEFAULT_VOICES[i]
+    );
+  });
+  activeTrack = 0;
+  updateRates();
+}
+
 // ---------------------------------------------------------------- landing ---
 // Signing in is the front door: the machine only boots once there is a
 // session, and the tap on Enter is what unlocks audio (iOS needs a gesture).
-let booted = false;
-
 async function enterApp(): Promise<void> {
-  if (booted) return;
   const btn = $<HTMLButtonElement>('#enter-btn');
   btn.disabled = true;
   btn.textContent = 'Loading…';
   try {
     await audio.start();
     await synths.init(audio.ctx, audio.output);
-    booted = true;
     $('#landing').hidden = true;
-    $('#app').hidden = false;
     buildMixerUI();
     wire();
     refreshLabels();
     transport.onStep = onStep;
-    transport.start();
     requestAnimationFrame(frame);
     (window as unknown as { __dbg?: unknown }).__dbg = {
       tracks,
@@ -108,12 +180,170 @@ async function enterApp(): Promise<void> {
       filled: () => track().grid.cells.filter((v) => v > 0).length,
       ctx: () => audio.ctx.state,
     };
+    await showProjects();
   } catch (err) {
     btn.disabled = false;
     btn.textContent = 'Enter';
     const w = window as unknown as { __bootErr?: (m: unknown) => void };
     w.__bootErr?.(err instanceof Error ? `${err.name}: ${err.message}` : err);
   }
+}
+
+// ------------------------------------------------------------ projects UI ---
+let rows: ProjectRow[] = [];
+
+async function showProjects(): Promise<void> {
+  transport.stop();
+  $('#app').hidden = true;
+  $('#projects').hidden = false;
+  closeMenus();
+  renderProjects(); // show the empty state at once; rows fill in below
+  try {
+    rows = await listProjects();
+  } catch {
+    rows = [];
+  }
+  renderProjects();
+}
+
+function renderProjects(): void {
+  const list = $('#p-list');
+  list.innerHTML = '';
+  list.classList.toggle('empty', rows.length === 0);
+  $('#create-new').hidden = rows.length === 0;
+
+  if (rows.length === 0) {
+    const empty = document.createElement('button');
+    empty.className = 'p-empty';
+    empty.textContent = '+ Create first project';
+    empty.addEventListener('click', () => openNewProject());
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const row of rows) {
+    const card = document.createElement('button');
+    card.className = 'p-card';
+    card.innerHTML =
+      '<span class="p-more"><span class="material-symbols-outlined">' +
+      'more_vert</span></span><span class="p-name"></span>';
+    card.querySelector<HTMLElement>('.p-name')!.textContent = row.name;
+    card.addEventListener('click', () => openProject(row));
+    card
+      .querySelector<HTMLElement>('.p-more')!
+      .addEventListener('click', (e) => {
+        e.stopPropagation();
+        openCardMenu(row, e as PointerEvent);
+      });
+    list.appendChild(card);
+  }
+}
+
+/** One dot per track in the sequencer header; the active one is bright. */
+function refreshTrackDots(): void {
+  const dots = document.querySelectorAll<HTMLElement>('#view-toggle span');
+  dots.forEach((d, i) => d.classList.toggle('on', i === activeTrack));
+}
+
+function closeMenus(): void {
+  $('#p-menu').hidden = true;
+  $('#p-account').hidden = true;
+}
+
+let menuRow: ProjectRow | null = null;
+
+function openCardMenu(row: ProjectRow, e: PointerEvent): void {
+  menuRow = row;
+  const menu = $('#p-menu');
+  menu.hidden = false;
+  const x = Math.min(e.clientX, window.innerWidth - 184);
+  const y = Math.min(e.clientY, window.innerHeight - 120);
+  menu.style.left = `${Math.max(8, x - 140)}px`;
+  menu.style.top = `${y + 8}px`;
+}
+
+async function openProject(row: ProjectRow): Promise<void> {
+  applyProject(row);
+  await enterSequencer();
+}
+
+async function openNewProject(): Promise<void> {
+  resetProject();
+  try {
+    const created = await createProject({ ...snapshot(), name: randomName() });
+    projectId = created.id;
+    rows = [created, ...rows];
+  } catch {
+    /* offline: play now, the row appears on the next successful save */
+  }
+  await enterSequencer();
+}
+
+async function enterSequencer(): Promise<void> {
+  $('#projects').hidden = true;
+  $('#app').hidden = false;
+  refreshLabels();
+  refreshMixerUI();
+  refreshTrackDots();
+  transport.start();
+}
+
+function wireProjects(): void {
+  // Test seam: the sandbox has no Supabase, so suites can inject rows.
+  (window as unknown as { __setRows?: (r: ProjectRow[]) => void }).__setRows = (
+    r
+  ) => {
+    rows = r;
+    renderProjects();
+  };
+
+  $('#create-new').addEventListener('click', () => openNewProject());
+
+  $('#profile-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const menu = $('#p-account');
+    const wasOpen = !menu.hidden;
+    closeMenus();
+    if (wasOpen) return;
+    $('#p-account-email').textContent = currentSession()?.user.email ?? '';
+    menu.hidden = false;
+    menu.style.right = '20px';
+    menu.style.left = 'auto';
+    menu.style.top = '84px';
+  });
+
+  $('#p-account').addEventListener('click', async (e) => {
+    const act = (e.target as HTMLElement).closest('button')?.dataset.act;
+    if (act !== 'signout') return;
+    await signOut();
+    location.reload();
+  });
+
+  $('#p-menu').addEventListener('click', async (e) => {
+    const act = (e.target as HTMLElement).closest('button')?.dataset.act;
+    const row = menuRow;
+    closeMenus();
+    if (!row || !act) return;
+    if (act === 'rename') {
+      const name = prompt('Project name', row.name)?.trim();
+      if (!name || name === row.name) return;
+      row.name = name;
+      renderProjects();
+      await renameProject(row.id, name).catch(() => {});
+    } else if (act === 'delete') {
+      if (!confirm(`Delete "${row.name}"?`)) return;
+      rows = rows.filter((r) => r.id !== row.id);
+      renderProjects();
+      await deleteProject(row.id).catch(() => {});
+    }
+  });
+
+  document.addEventListener('pointerdown', (e) => {
+    const t = e.target as HTMLElement;
+    if (t.closest('.p-menu') || t.closest('#profile-btn') || t.closest('.p-more'))
+      return;
+    closeMenus();
+  });
 }
 
 // -------------------------------------------------------------- sequencer ----
@@ -274,11 +504,9 @@ function frame(now: number): void {
 }
 
 // -------------------------------------------------------------- mixer UI ----
-// Monochrome speaker with a slash, to match the mockup.
-const MUTE_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
-  stroke="currentColor" stroke-width="2" stroke-linecap="round"
-  stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor"
-  stroke="none"/><path d="M16 9l5 6M21 9l-5 6"/></svg>`;
+// Material Symbols, same family as the rest of the icons.
+const MUTE_ICON =
+  '<span class="material-symbols-outlined">volume_off</span>';
 
 function buildMixerUI(): void {
   const host = $('#mixer-ui');
@@ -302,6 +530,7 @@ function buildMixerUI(): void {
       e.stopPropagation();
       tracks[i].muted = !tracks[i].muted;
       refreshMixerUI();
+      touch();
     });
 
     slot.append(name, mute);
@@ -311,12 +540,13 @@ function buildMixerUI(): void {
   // Save tile: an account feature, so it opens the sheet while signed out.
   const save = document.createElement('button');
   save.id = 'save-tile';
-  save.textContent = 'SAVE PROJECT';
-  save.addEventListener('click', (e) => {
+  save.textContent = 'PROJECTS';
+  save.addEventListener('click', async (e) => {
     e.stopPropagation();
-    // Saving itself lands in the next pass.
-    save.textContent = 'SAVED SOON…';
-    window.setTimeout(() => (save.textContent = 'SAVE PROJECT'), 1200);
+    // Edits already autosave; this just flushes and returns to the library.
+    if (projectId) await saveProject(projectId, snapshot()).catch(() => {});
+    setMixer(false);
+    await showProjects();
   });
   host.appendChild(save);
 
@@ -359,6 +589,7 @@ function openTrack(i: number): void {
   activeTrack = i;
   setMixer(false);
   refreshLabels();
+  refreshTrackDots();
 }
 
 // -------------------------------------------------------------------- auth ---
@@ -442,6 +673,7 @@ function wire(): void {
       const p = g.pos(x, y);
       if (p) g.brush(p.gx, p.gy);
     }
+    touch();
   };
   canvas.addEventListener('pointerdown', (e) => {
     if (mixer) {
@@ -489,11 +721,13 @@ function wire(): void {
     if (Math.abs(dx) > 3) bmoved = true;
     transport.bpm = Math.min(240, Math.max(40, Math.round(bstart + dx * 0.4)));
     refreshLabels();
+    touch();
   });
   bpm.addEventListener('pointerup', () => {
     if (!bmoved) {
       transport.bpm = transport.bpm >= 200 ? 60 : transport.bpm + 10;
       refreshLabels();
+      touch();
     }
     bstart = 0;
   });
@@ -502,18 +736,23 @@ function wire(): void {
     rootPc = (rootPc + 1) % 12;
     updateRates();
     refreshLabels();
+    touch();
   });
   $('#scale').addEventListener('click', () => {
     scaleIdx = (scaleIdx + 1) % SCALES.length;
     updateRates();
     refreshLabels();
+    touch();
   });
 
   $('#erase').addEventListener('click', () => {
     eraseMode = !eraseMode;
     $('#erase').classList.toggle('active', eraseMode);
   });
-  $('#rndm').addEventListener('click', () => track().grid.random());
+  $('#rndm').addEventListener('click', () => {
+    track().grid.random();
+    touch();
+  });
   $('#sample').addEventListener('click', cycleVoice);
 
   window.addEventListener('resize', positionMixerUI);
@@ -533,6 +772,7 @@ async function cycleVoice(): Promise<void> {
       t.buffer = await audio.load(v.def.file);
     }
     updateRates();
+    touch();
   } finally {
     el.classList.remove('loading');
   }
@@ -547,6 +787,7 @@ function refreshLabels(): void {
 
 // ------------------------------------------------------------------ start ---
 wireLanding();
+wireProjects();
 initAuth().catch((err) => {
   const w = window as unknown as { __bootErr?: (m: unknown) => void };
   w.__bootErr?.(err instanceof Error ? err.message : err);

@@ -23,6 +23,9 @@ await page.evaluate(() => {
   document.getElementById('signed-in').hidden = false;
 });
 await page.click('#enter-btn');
+// Landing -> projects -> a fresh project boots the sequencer.
+await page.waitForSelector('.p-empty, .p-card', { timeout: 15000 });
+await page.click('.p-empty, .p-card');
 await page.waitForSelector('#app:not([hidden])', { timeout: 10000 });
 await page.click('#rndm');
 
