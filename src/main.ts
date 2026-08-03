@@ -6,6 +6,7 @@ import { SAMPLES, type SampleDef } from './samples';
 import { Synths, SYNTHS, type SynthId } from './synths';
 import {
   consumeAuthError,
+  consumeAuthIssue,
   currentSession,
   initAuth,
   onAuthChange,
@@ -673,6 +674,8 @@ function wireLanding(): void {
       $('#projects').hidden = true;
       $('#app').hidden = true;
       $('#landing').hidden = false;
+      const issue = consumeAuthIssue();
+      if (issue) setLandingMsg(issue, true);
     }
   });
 }
@@ -818,7 +821,7 @@ if (peekSession()) {
 }
 // A provider that bounced us back with an error would otherwise just show
 // the sign-in form again, with the reason buried in the URL.
-const authError = consumeAuthError();
+const authError = consumeAuthError() ?? consumeAuthIssue();
 if (authError) setLandingMsg(authError, true);
 initAuth().catch((err) => {
   const w = window as unknown as { __bootErr?: (m: unknown) => void };

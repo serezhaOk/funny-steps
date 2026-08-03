@@ -4,7 +4,11 @@
 // protected by row level security on the server, so this key alone grants no
 // access to anyone else's rows. See supabase/schema.sql.
 
-import { createClient, type Session } from '@supabase/supabase-js';
+import {
+  createClient,
+  isAuthRetryableFetchError,
+  type Session,
+} from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://iayngkirvbjlsmgtymnl.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_9cBv22ifdlp-nFn_d4VhoQ_qoNoQOvF';
@@ -23,7 +27,36 @@ try {
   // Private mode with storage disabled: sign-in still works for this visit.
 }
 
+// Why the last refresh was turned down, straight from the server. The client
+// reports a rejected refresh as a plain signed-out state with no reason
+// attached, and the reason is the whole diagnosis: "Already Used" means two
+// refreshes raced, "session expired" means a session policy ended it.
+let refreshRejection: string | null = null;
+
+async function trackedFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<Response> {
+  const res = await fetch(input, init);
+  const url = typeof input === 'string' ? input : String((input as Request).url ?? input);
+  if (!res.ok && url.includes('/auth/v1/token')) {
+    try {
+      const body = (await res.clone().json()) as {
+        error_description?: string;
+        msg?: string;
+        message?: string;
+      };
+      refreshRejection =
+        body.error_description ?? body.msg ?? body.message ?? `HTTP ${res.status}`;
+    } catch {
+      refreshRejection = `HTTP ${res.status}`;
+    }
+  }
+  return res;
+}
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  global: { fetch: trackedFetch },
   auth: {
     storageKey: STORAGE_KEY,
     persistSession: true,
@@ -100,11 +133,59 @@ function retryWhenOnline(): void {
   );
 }
 
+// Losing a stored session is otherwise silent — the user just meets the
+// sign-in screen again with no idea why. Record the reason so the landing
+// can show it, and so we can tell a rejected refresh token (a server-side
+// session policy) apart from a signing-out user.
+const ISSUE_KEY = 'sqia-auth-issue';
+let signingOut = false;
+
+function noteIssue(reason: string): void {
+  try {
+    localStorage.setItem(ISSUE_KEY, JSON.stringify({ reason, at: Date.now() }));
+  } catch {
+    // Nothing to report from if storage is unavailable.
+  }
+}
+
+/** Why the last session ended, if it ended on its own. Reads once. */
+export function consumeAuthIssue(): string | null {
+  try {
+    const raw = localStorage.getItem(ISSUE_KEY);
+    if (!raw) return null;
+    localStorage.removeItem(ISSUE_KEY);
+    const { reason, at } = JSON.parse(raw) as { reason: string; at: number };
+    const mins = Math.round((Date.now() - at) / 60000);
+    if (mins > 24 * 60) return null; // too old to be about this visit
+    const when = mins < 2 ? 'just now' : `${mins} min ago`;
+    return `Session ended ${when}: ${reason}`;
+  } catch {
+    return null;
+  }
+}
+
 /** Read any existing session and keep it in sync from then on. */
 export async function initAuth(): Promise<void> {
-  const { data } = await supabase.auth.getSession();
+  const cached = peekSession();
+  // Past its hour, getSession() spends the refresh token to mint a new one.
+  // That is the step that quietly fails, so keep hold of the error.
+  const { data, error } = await supabase.auth.getSession();
   session = data.session;
-  listeners.forEach((fn) => fn(session));
+  if (!session && cached && isAuthRetryableFetchError(error)) {
+    // The refresh never reached the server, so nothing says the stored
+    // sign-in is bad. Keep quiet and try again instead of announcing a
+    // signed-out state the user would see as the sign-in screen.
+    retryWhenOnline();
+    setTimeout(() => void supabase.auth.refreshSession(), 5_000);
+    setTimeout(() => void supabase.auth.refreshSession(), 20_000);
+  } else {
+    if (cached && !session) {
+      noteIssue(
+        refreshRejection ?? error?.message ?? 'the stored sign-in was rejected'
+      );
+    }
+    listeners.forEach((fn) => fn(session));
+  }
   supabase.auth.onAuthStateChange((event, s) => {
     // A token refresh that failed because the device is offline must not
     // throw the user back to the sign-in screen: the refresh token on disk
@@ -114,6 +195,9 @@ export async function initAuth(): Promise<void> {
       return;
     }
     if (!s && event !== 'SIGNED_OUT' && event !== 'INITIAL_SESSION') return;
+    if (!s && session && !signingOut) {
+      noteIssue(refreshRejection ?? 'this device’s sign-in was rejected');
+    }
     session = s;
     listeners.forEach((fn) => fn(session));
   });
@@ -141,5 +225,12 @@ export async function signInWithEmail(email: string): Promise<void> {
 }
 
 export async function signOut(): Promise<void> {
-  await supabase.auth.signOut();
+  signingOut = true;
+  try {
+    // Local only: ending every session would sign the user's other devices
+    // out too, which is not what the menu item says.
+    await supabase.auth.signOut({ scope: 'local' });
+  } finally {
+    signingOut = false;
+  }
 }
