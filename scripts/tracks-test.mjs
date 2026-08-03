@@ -92,8 +92,9 @@ const fps = await page.evaluate(async () => {
 });
 console.log('FPS_MIXER_ALL_TRACKS:', fps, 'tracks=', N);
 
-// tap the last slot -> that track becomes active and the view goes full
-await page.mouse.click(box.x + box.w * 0.5, box.y + box.h * 0.8);
+// tap the last panel -> that track becomes active and the view goes full
+const last = (await page.evaluate(() => window.__dbg.panels())).at(-1);
+await page.mouse.click(box.x + last[0] + last[2] / 2, box.y + last[1] + 20);
 await page.waitForTimeout(600);
 const after = await page.evaluate(() => ({
   active: window.__dbg.activeTrack(),

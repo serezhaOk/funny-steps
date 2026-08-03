@@ -178,6 +178,7 @@ async function ensureAudio(): Promise<void> {
     grid: () => track().grid,
     activeTrack: () => activeTrack,
     mixer: () => mixer,
+    panels: () => tracks.map((_, i) => quadrant(i)),
     filled: () => track().grid.cells.filter((v) => v > 0).length,
     ctx: () => audio.ctx.state,
   };
@@ -426,33 +427,29 @@ function fitCanvas(): void {
 
 type Rect = [number, number, number, number];
 
-const GAP = 10;
-const SAVE_ROOM = 62; // bottom strip in the mixer for the save tile
+// Mixer geometry, measured off the mockup (375x812): the tracks sit side by
+// side with 10px outer margins and a 17px gutter, each panel 168.75x270 —
+// so the panels keep that 1:1.6 shape and start a fixed fraction down the
+// stage. The bottom strip belongs to the "Back to projects" button, which is
+// a DOM element and positions itself.
+const MIX_MARGIN = 10;
+const MIX_GUTTER = 17;
+const PANEL_RATIO = 270 / 168.75;
+const BUTTON_ROOM = 100;
 
-/**
- * Where track i sits in the mixer. Two tracks stack vertically (taller slots
- * suit the 12x16 grid better); more than two fall back to a 2x2 board.
- */
+/** Where track i sits in the mixer: one column per track, left to right. */
 function quadrant(i: number): Rect {
-  const cols = TRACKS <= 2 ? 1 : 2;
-  const rows = Math.ceil(TRACKS / cols);
-  const w = (cssW - GAP * (cols + 1)) / cols;
-  // Leave a strip at the bottom for the save tile.
-  const h = (cssH - SAVE_ROOM - GAP * (rows + 1)) / rows;
-  const x = GAP + (i % cols) * (w + GAP);
-  const y = GAP + Math.floor(i / cols) * (h + GAP);
-  return [x, y, w, h];
+  const w = (cssW - MIX_MARGIN * 2 - MIX_GUTTER * (TRACKS - 1)) / TRACKS;
+  const y = Math.round(cssH * 0.108);
+  const h = Math.max(80, Math.min(w * PANEL_RATIO, cssH - y - BUTTON_ROOM));
+  return [MIX_MARGIN + i * (w + MIX_GUTTER), y, w, h];
 }
 
 const fullRect = (): Rect => [0, 0, cssW, cssH];
 
-const LABEL_ROOM = 40; // strip at the bottom of a slot for name + mute
-
-/** Where the grid itself draws inside a slot — above the label strip. */
-function slotGrid(i: number): Rect {
-  const [x, y, w, h] = quadrant(i);
-  return [x, y, w, Math.max(40, h - LABEL_ROOM)];
-}
+// The name and mute chips sit inside the panel, over the last rows of dots,
+// so the grid gets the whole panel to itself.
+const slotGrid = quadrant;
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const lerpRect = (a: Rect, b: Rect, t: number): Rect => [
@@ -489,7 +486,7 @@ function frame(now: number): void {
 
   // Slot outlines, fading in with the mixer.
   if (t > 0.01) {
-    ctx.strokeStyle = `rgba(255,255,255,${0.18 * t})`;
+    ctx.strokeStyle = `rgba(255,255,255,${0.7 * t})`;
     ctx.lineWidth = 1;
     for (let i = 0; i < TRACKS; i++) {
       const [x, y, w, h] = quadrant(i);
@@ -557,7 +554,7 @@ function buildMixerUI(): void {
   // Save tile: an account feature, so it opens the sheet while signed out.
   const save = document.createElement('button');
   save.id = 'save-tile';
-  save.textContent = 'PROJECTS';
+  save.textContent = 'Back to projects';
   save.addEventListener('click', async (e) => {
     e.stopPropagation();
     // Edits already autosave; this just flushes and returns to the library.
@@ -576,7 +573,7 @@ function positionMixerUI(): void {
   slots.forEach((slot, i) => {
     const [x, y, w, h] = quadrant(i);
     slot.style.left = `${x + 8}px`;
-    slot.style.top = `${y + h - 36}px`;
+    slot.style.top = `${y + h - 8 - 30}px`;
     slot.style.width = `${w - 16}px`;
   });
 }

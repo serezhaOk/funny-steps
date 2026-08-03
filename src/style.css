@@ -537,23 +537,30 @@ canvas#grid {
   inset: 0;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.18s;
+  /* Hidden outright, or the invisible button would still eat footer taps. */
+  visibility: hidden;
+  transition: opacity 0.18s, visibility 0.18s;
 }
 #app.mixer #mixer-ui {
   opacity: 1;
+  visibility: visible;
 }
+/* Name on the left, mute on the right, both pinned inside the panel. */
 .slot {
   position: absolute;
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  height: 30px;
 }
 .slot .name {
-  padding: 5px 10px;
-  background: #fff;
+  height: 30px;
+  padding: 6px 10px;
+  background: var(--ui);
   color: #000;
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
+  font-size: 16px;
+  line-height: 18px;
+  letter-spacing: 0;
   white-space: nowrap;
   pointer-events: auto;
 }
@@ -561,24 +568,23 @@ canvas#grid {
   opacity: 0.7;
 }
 .slot .mute {
-  width: 34px;
+  width: 30px;
   height: 30px;
   display: grid;
   place-items: center;
-  background: #000;
-  border: 1px solid var(--ui);
+  background: rgba(255, 255, 255, 0.1);
   color: var(--ui);
+  /* Before the icon font loads the ligature shows as literal text; clip it
+     rather than let it spill across the panel. */
+  overflow: hidden;
   pointer-events: auto;
 }
 .slot .mute .material-symbols-outlined {
-  font-size: 18px;
+  font-size: 17px;
 }
 .slot .mute.on {
   background: var(--ui);
   color: #000;
-}
-.slot .name {
-  background: var(--ui);
 }
 .slot[hidden],
 .slot .name[hidden],
@@ -586,21 +592,28 @@ canvas#grid {
   display: none;
 }
 
-/* ---- save project tile (mixer) ---- */
+/* ---- back to projects (mixer) ---- */
+/* Fixed to the viewport rather than the stage: the mockup puts it across the
+   band the (hidden) footer still occupies. */
 #save-tile {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
-  height: 52px;
+  position: fixed;
+  left: 20px;
+  right: 20px;
+  bottom: calc(36px + env(safe-area-inset-bottom));
+  max-width: 335px;
+  margin-inline: auto;
+  height: 126px;
   display: grid;
   place-items: center;
-  letter-spacing: 0.16em;
-  font-size: 0.72rem;
-  color: var(--ink);
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 32px;
+  font-family: var(--ui-font);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.15px;
+  color: var(--ui);
   pointer-events: auto;
 }
 #save-tile:active {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.28);
 }
