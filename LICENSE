@@ -1,0 +1,53 @@
+SQIA — Proprietary Software License
+Copyright (c) 2026 serezhaOk <serezhaok@gmail.com>. All rights reserved.
+
+This repository, the SQIA application, and everything in them — source code,
+interface design, visual design, sound design, synthesis presets, audio
+samples, text and documentation (the "Work") — are the exclusive property of
+the copyright holder and are protected by copyright law and international
+treaties.
+
+The Work is published on GitHub and served at https://sqia.serezhaok.com so
+that people can use the application and read the source. Being publicly
+readable does not place it in the public domain and grants no licence.
+
+WHAT YOU MAY DO
+
+  - Use the hosted application at https://sqia.serezhaok.com in accordance
+    with its Terms of Use.
+  - Read the source code, and run it locally for the sole purpose of
+    evaluating or reviewing it.
+  - Quote short excerpts for commentary, criticism, teaching, review or news
+    reporting, with attribution — the uses that copyright law reserves to the
+    public regardless of this licence.
+
+WHAT YOU MAY NOT DO, WITHOUT PRIOR WRITTEN PERMISSION
+
+  - Copy, reproduce, publish or redistribute the Work or any part of it.
+  - Modify the Work, or create derivative works from it.
+  - Host, deploy, mirror or otherwise make the Work available to others,
+    whether free of charge or not.
+  - Use the Work, in whole or in part, in another product or project,
+    commercial or non-commercial.
+  - Use the Work, or any part of it, to train machine learning models.
+  - Remove, obscure or alter any copyright, authorship or licence notice.
+
+Forking this repository on GitHub is permitted only to the extent GitHub's
+Terms of Service require, and grants none of the rights withheld above.
+
+To request permission for any use not granted here, write to
+serezhaok@gmail.com.
+
+THIRD-PARTY COMPONENTS
+
+The Work incorporates and depends on third-party software, which remains
+under its own licence and is not covered by this one. See NOTICE.md.
+
+NO WARRANTY
+
+THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE WORK OR ITS USE.

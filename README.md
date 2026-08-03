@@ -35,3 +35,14 @@ Deploys to GitHub Pages on every push to `main`
 passwordless email link, and the tap on Enter is what unlocks audio (iOS
 needs a gesture). Database schema and row level security live in
 `supabase/schema.sql`.
+
+## Copyright
+
+Copyright © 2026 serezhaOk. All rights reserved.
+
+SQIA is **not** open source. The source is public so the app can be served
+from GitHub Pages and so people can read it — that grants no licence to copy,
+modify, redistribute, host or reuse it. See [LICENSE](LICENSE) for what is and
+is not allowed, and [NOTICE.md](NOTICE.md) for third-party components.
+
+Permission requests: serezhaok@gmail.com

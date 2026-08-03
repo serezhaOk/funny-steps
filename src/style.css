@@ -199,6 +199,12 @@ button {
   text-decoration: underline;
 }
 
+.copyright {
+  margin-top: 28px;
+  font-size: 0.72rem;
+  color: #6a6a6a;
+}
+
 #boot-err {
   position: absolute;
   left: 16px;
