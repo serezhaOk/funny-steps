@@ -36,6 +36,24 @@ export function onAuthChange(fn: (s: Session | null) => void): void {
   fn(session);
 }
 
+/**
+ * Providers report failures by redirecting back with error params (in the
+ * query string, the hash, or both). Pull the message out so the UI can show
+ * it instead of silently bouncing to the sign-in form.
+ */
+export function consumeAuthError(): string | null {
+  const fromQuery = new URLSearchParams(location.search);
+  const fromHash = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const desc =
+    fromQuery.get('error_description') ?? fromHash.get('error_description');
+  const code = fromQuery.get('error_code') ?? fromHash.get('error_code');
+  const err = fromQuery.get('error') ?? fromHash.get('error');
+  if (!desc && !err) return null;
+  history.replaceState(null, '', redirectTo());
+  const text = decodeURIComponent(desc ?? err ?? 'Sign-in failed');
+  return code ? `${text} (${code})` : text;
+}
+
 /** Read any existing session and keep it in sync from then on. */
 export async function initAuth(): Promise<void> {
   const { data } = await supabase.auth.getSession();

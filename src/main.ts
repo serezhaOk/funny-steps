@@ -5,6 +5,7 @@ import { COLS, NOTE_NAMES, SCALES, columnMidi, rateTable } from './scales';
 import { SAMPLES, type SampleDef } from './samples';
 import { Synths, SYNTHS, type SynthId } from './synths';
 import {
+  consumeAuthError,
   currentSession,
   initAuth,
   onAuthChange,
@@ -779,6 +780,10 @@ function refreshLabels(): void {
 // ------------------------------------------------------------------ start ---
 wireLanding();
 wireProjects();
+// A provider that bounced us back with an error would otherwise just show
+// the sign-in form again, with the reason buried in the URL.
+const authError = consumeAuthError();
+if (authError) setLandingMsg(authError, true);
 initAuth().catch((err) => {
   const w = window as unknown as { __bootErr?: (m: unknown) => void };
   w.__bootErr?.(err instanceof Error ? err.message : err);
