@@ -177,6 +177,7 @@ async function ensureAudio(): Promise<void> {
     tracks,
     transport,
     audio,
+    synths,
     grid: () => track().grid,
     activeTrack: () => activeTrack,
     mixer: () => mixer,
@@ -362,7 +363,7 @@ function onStep(step: number, time: number): void {
     const voice = VOICES[t.voiceIdx];
     const synthing = voice.kind === 'synth' && synths.isReady;
     if (synthing && !ticked.has(voice.id)) {
-      synths.tick(voice.id, step, transport.bpm);
+      synths.tick(voice.id, step, transport.bpm, time);
       ticked.add(voice.id);
     }
 

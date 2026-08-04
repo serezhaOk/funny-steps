@@ -62,6 +62,9 @@ interface Chain {
   chorus: Tone.Chorus;
   delay: Tone.PingPongDelay;
   send: Tone.Gain;
+  /** Echo spacing in steps, and what that came to in seconds. */
+  division: number;
+  echo: number;
 }
 
 export class Synths {
@@ -118,7 +121,7 @@ export class Synths {
     delay.connect(send);
     send.connect(this.reverb); // wet
 
-    const chain = { filter, chorus, delay, send };
+    const chain = { filter, chorus, delay, send, division: 0, echo: 0.32 };
     this.chains.set(id, chain);
     return chain;
   }
@@ -137,6 +140,20 @@ export class Synths {
       node.dispose();
       this.active--;
     }, Math.max(0, ms));
+  }
+
+  /** Test seam: what a preset's chain sounds like right now. */
+  snapshot(
+    id: SynthId
+  ): { cutoff: number; echo: number; wet: number; feedback: number } | null {
+    const c = this.chains.get(id);
+    if (!c) return null;
+    return {
+      cutoff: c.filter.frequency.value as number,
+      echo: c.echo,
+      wet: c.delay.wet.value,
+      feedback: c.delay.feedback.value,
+    };
   }
 
   /** Room for another note? Keeps four dense tracks from stacking up. */
@@ -425,22 +442,61 @@ export class Synths {
   }
 
   // Called once per bar per preset in use; drifts that preset's patch.
-  tick(id: SynthId, step: number, bpm: number): void {
+  //
+  // `time` is the scheduled moment of the downbeat, a lookahead ahead of
+  // Tone.now(). Every change has to be anchored to it: starting the ramps
+  // at "now" instead lands them roughly a tenth of a second early, so the
+  // patch audibly shifts during the tail of the bar that is still playing.
+  tick(id: SynthId, step: number, bpm: number, time: number): void {
     if (!this.ready || step !== 0) return;
     const chain = this.chains.get(id);
     if (!chain) return;
     const s = TONE_SETTINGS[id];
-    const now = Tone.now();
     const stepDur = 60 / bpm / 4;
 
     chain.filter.frequency.rampTo(
       rnd(s.cutoff[0], s.cutoff[1]),
       rnd(0.4, 2.5),
-      now
+      time
     );
-    chain.delay.delayTime.rampTo(stepDur * pick([2, 3, 4, 6]), 0.3, now);
-    chain.delay.feedback.rampTo(rnd(0.2, 0.55), 0.5, now);
-    chain.chorus.depth = rnd(0.2, 0.8);
-    chain.send.gain.rampTo(rnd(s.reverbWet[0], s.reverbWet[1]), 1, now);
+    chain.delay.feedback.rampTo(rnd(0.2, 0.55), 0.5, time);
+    chain.send.gain.rampTo(rnd(s.reverbWet[0], s.reverbWet[1]), 1, time);
+
+    // Chorus depth is a plain number, not a ramped parameter: assigning it
+    // steps the modulation and clicks. Drift it instead.
+    chain.chorus.depth = Math.min(
+      0.8,
+      Math.max(0.2, chain.chorus.depth + rnd(-0.09, 0.09))
+    );
+
+    this.retimeEcho(chain, s.delayWet, stepDur, time);
+  }
+
+  /**
+   * Move the echo onto a new subdivision of the beat.
+   *
+   * Retuning a delay line that is still ringing resamples whatever is in
+   * its buffer, which pitch-warps the echoes — a gargle right at the turn
+   * of the loop. So change it rarely, and mute the echoes across the change
+   * so there is nothing left in the buffer to warp. A tempo change goes
+   * through here too, for the same reason.
+   */
+  private retimeEcho(
+    chain: Chain,
+    wet: number,
+    stepDur: number,
+    time: number
+  ): void {
+    const reroll = chain.division === 0 || Math.random() < 0.25;
+    const division = reroll ? pick([2, 3, 4, 6]) : chain.division;
+    const next = stepDur * division;
+    if (Math.abs(next - chain.echo) < 1e-3) return;
+    chain.division = division;
+    chain.echo = next;
+
+    const duckFrom = Math.max(Tone.now(), time - 0.08);
+    chain.delay.wet.rampTo(0, Math.max(0.01, time - duckFrom), duckFrom);
+    chain.delay.delayTime.setValueAtTime(next, time);
+    chain.delay.wet.rampTo(wet, 0.2, time + 0.02);
   }
 }
