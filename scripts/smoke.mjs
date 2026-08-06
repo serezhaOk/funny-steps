@@ -63,11 +63,19 @@ const dist = await page.evaluate(() => {
 });
 console.log('BRUSH:', JSON.stringify(dist));
 
-// cycle a couple samples (loads new wavs over the network)
+// the sound picker: tap the label, choose the third voice in the sheet
 await page.click('#sample');
-await page.waitForTimeout(300);
-await page.click('#sample');
+await page.waitForSelector('#voice-sheet:not([hidden])', { timeout: 4000 });
+const sheet = await page.$$eval('#voice-list button .nm', (ns) =>
+  ns.map((n) => n.textContent)
+);
+console.log('SHEET:', JSON.stringify(sheet));
+await page.waitForTimeout(350); // let the sheet finish sliding up
+await page.screenshot({ path: 'scripts/sheet.png' });
+await page.click('#voice-list button:nth-child(3)');
 await page.waitForTimeout(400);
+const sheetClosed = await page.$eval('#voice-sheet', (el) => el.hidden);
+console.log('SHEET_CLOSED:', sheetClosed);
 const s2 = await page.evaluate(
   () => document.getElementById('sample').textContent
 );
@@ -82,5 +90,14 @@ await page.screenshot({ path: 'scripts/shot.png' });
 console.log('ERRORS:', errors.length ? errors.join('\n') : 'none');
 await browser.close();
 process.exit(
-  errors.length || boot.bootErr || dist.partial === 0 || dist.full === 0 ? 1 : 0
+  errors.length ||
+    boot.bootErr ||
+    dist.partial === 0 ||
+    dist.full === 0 ||
+    !sheetClosed ||
+    sheet.length < 5 ||
+    !sheet.includes('ACID') ||
+    s2 !== sheet[2]
+    ? 1
+    : 0
 );

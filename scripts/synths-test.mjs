@@ -11,7 +11,10 @@ const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
 page.on('console', (m) => {
-  if (m.type() === 'error') errors.push('CONSOLE: ' + m.text());
+  // The sandbox blocks Supabase and Google Fonts; those are environmental.
+  const t = m.text();
+  if (m.type() === 'error' && !/net::ERR_|Failed to load resource/.test(t))
+    errors.push('CONSOLE: ' + t);
   if (m.type() === 'warning' && /polyphony|dropped/i.test(m.text()))
     errors.push('WARN: ' + m.text());
 });
@@ -49,23 +52,32 @@ const measure = (secs) =>
     return Number(peak.toFixed(4));
   }, secs);
 
-const SYNTH_COUNT = 4;
+/** Pick the nth sound out of the bottom sheet. */
+async function selectVoice(i) {
+  await page.click('#sample');
+  await page.waitForSelector('#voice-sheet:not([hidden])', { timeout: 5000 });
+  await page.click(`#voice-list button:nth-child(${i + 1})`);
+  await page.waitForFunction(
+    () => !document.getElementById('sample').classList.contains('loading'),
+    { timeout: 10000 }
+  );
+  await page.waitForTimeout(300);
+}
+
+await page.click('#sample');
+await page.waitForSelector('#voice-sheet:not([hidden])', { timeout: 5000 });
+const SYNTH_COUNT = await page.$$eval('#voice-list button', (b) => b.length);
+await page.click('#sheet-back');
+
 const results = [];
 for (let i = 0; i < SYNTH_COUNT; i++) {
+  await selectVoice(i);
   const label = await page.$eval('#sample', (e) => e.textContent);
   // measure across ~2 loops (4s at 120bpm), split early vs late
   const early = await measure(2);
   const late = await measure(2.5);
   results.push({ label, early, late });
   console.log(`${label.padEnd(9)} early=${early} late=${late}`);
-  if (i < SYNTH_COUNT - 1) {
-    await page.click('#sample');
-    await page.waitForFunction(
-      () => !document.getElementById('sample').classList.contains('loading'),
-      { timeout: 10000 }
-    );
-    await page.waitForTimeout(300);
-  }
 }
 
 const dead = results.filter((r) => r.early < 0.004 || r.late < r.early * 0.08);

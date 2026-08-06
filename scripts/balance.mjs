@@ -51,18 +51,31 @@ const rms = () => page.evaluate(async () => {
 // average a few runs per voice.
 const REPEATS = 3;
 const seen = [];
-for (let i = 0; i < 4; i++) {
-  const label = await page.$eval('#sample', (e) => e.textContent);
-  const runs = [];
-  for (let k = 0; k < REPEATS; k++) runs.push(await rms());
-  const avg = runs.reduce((a, b) => a + b, 0) / runs.length;
-  seen.push([label, Number(avg.toFixed(4)), runs.join('/')]);
+
+/** Pick the nth sound out of the bottom sheet. */
+async function selectVoice(i) {
   await page.click('#sample');
+  await page.waitForSelector('#voice-sheet:not([hidden])', { timeout: 5000 });
+  await page.click(`#voice-list button:nth-child(${i + 1})`);
   await page.waitForFunction(
     () => !document.getElementById('sample').classList.contains('loading'),
     { timeout: 10000 }
   );
   await page.waitForTimeout(400);
+}
+
+await page.click('#sample');
+await page.waitForSelector('#voice-sheet:not([hidden])', { timeout: 5000 });
+const count = await page.$$eval('#voice-list button', (b) => b.length);
+await page.click('#sheet-back');
+
+for (let i = 0; i < count; i++) {
+  await selectVoice(i);
+  const label = await page.$eval('#sample', (e) => e.textContent);
+  const runs = [];
+  for (let k = 0; k < REPEATS; k++) runs.push(await rms());
+  const avg = runs.reduce((a, b) => a + b, 0) / runs.length;
+  seen.push([label, Number(avg.toFixed(4)), runs.join('/')]);
 }
 for (const [l, v, runs] of seen) console.log(l.padEnd(9), 'avg', v, ' runs', runs);
 console.log('ERRORS:', errors.length ? errors.join('\n') : 'none');

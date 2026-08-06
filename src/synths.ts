@@ -13,18 +13,21 @@ const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const pick = <T>(xs: readonly T[]): T =>
   xs[Math.floor(Math.random() * xs.length)];
 
-export type SynthId = 'reverie' | 'kalimba' | 'rhodes' | 'machine';
+export type SynthId = 'reverie' | 'kalimba' | 'rhodes' | 'acid' | 'machine';
 
 export interface SynthDef {
   id: SynthId;
   label: string;
+  /** One line for the sound picker. */
+  hint: string;
 }
 
 export const SYNTHS: SynthDef[] = [
-  { id: 'reverie', label: 'REVERIE' },
-  { id: 'kalimba', label: 'KALIMBA' },
-  { id: 'rhodes', label: 'RHODES' },
-  { id: 'machine', label: 'MACHINE' },
+  { id: 'reverie', label: 'REVERIE', hint: 'Drifting pad, long random tails' },
+  { id: 'kalimba', label: 'KALIMBA', hint: 'Muted wooden pluck' },
+  { id: 'rhodes', label: 'RHODES', hint: 'Electric piano, shimmering' },
+  { id: 'acid', label: 'ACID', hint: 'Squelching 303 bass' },
+  { id: 'machine', label: 'MACHINE', hint: 'Synthesised drums' },
 ];
 
 const OSC_TYPES = [
@@ -48,11 +51,16 @@ const TONE_SETTINGS: Record<
     chorus: number;
     delayWet: number;
     reverbWet: [number, number];
+    /** Overdrive in the chain, 0 for none. The 303 wants some. */
+    drive?: number;
   }
 > = {
   reverie: { cutoff: [500, 5200], chorus: 0.5, delayWet: 0.28, reverbWet: [0.25, 0.55] },
   kalimba: { cutoff: [700, 3400], chorus: 0.25, delayWet: 0.2, reverbWet: [0.2, 0.4] },
   rhodes: { cutoff: [900, 6000], chorus: 0.6, delayWet: 0.18, reverbWet: [0.2, 0.42] },
+  // The chain filter stays out of the way — on acid the sweep belongs to the
+  // per-note filter, and the reverb stays dry so the bass keeps its edge.
+  acid: { cutoff: [6000, 12000], chorus: 0, delayWet: 0.22, reverbWet: [0.04, 0.16], drive: 0.28 },
   machine: { cutoff: [1200, 9000], chorus: 0.1, delayWet: 0.12, reverbWet: [0.06, 0.22] },
 };
 
@@ -116,7 +124,14 @@ export class Synths {
     });
     const send = new Tone.Gain((s.reverbWet[0] + s.reverbWet[1]) / 2);
 
-    filter.chain(chorus, delay);
+    // Overdrive sits after the filter, before the modulation — the way a
+    // 303 runs into a pedal, so the resonance peak is what gets driven.
+    if (s.drive) {
+      const drive = new Tone.Distortion({ distortion: s.drive, wet: 0.85 });
+      filter.chain(drive, chorus, delay);
+    } else {
+      filter.chain(chorus, delay);
+    }
     delay.connect(this.out); // dry
     delay.connect(send);
     send.connect(this.reverb); // wet
@@ -172,6 +187,8 @@ export class Synths {
         return this.kalimba(freq, vel, time);
       case 'rhodes':
         return this.rhodes(freq, vel, time);
+      case 'acid':
+        return this.acid(freq, vel, time);
       case 'machine':
         return this.machine(midi, vel, time);
     }
@@ -258,6 +275,55 @@ export class Synths {
       g.triggerAttack(freq * 2, time + rnd(0.01, 0.05));
       this.live('kalimba', g, time, 1.6);
     }
+  }
+
+  // ------------------------------------------------------------- ACID -----
+  // A 303 in spirit: one saw or square through a steep resonant lowpass
+  // that the envelope sweeps on every note. Two octaves below the grid, so
+  // it sits under the other tracks as a bass.
+  //
+  // Resonance and cutoff are where the character lives, so they are what
+  // gets rolled: Q from a polite growl to the edge of self-oscillation, and
+  // a base cutoff plus envelope depth that decide how far the sweep opens.
+  // Accents (loud cells) push both, the way the accent line on a real 303
+  // feeds the filter as well as the amp.
+  private acid(freq: number, vel: number, time: number): void {
+    const accent = vel > 0.7;
+    // How resonant the filter is. High Q with a low base is the squelch.
+    const q = accent ? rnd(9, 15) : rnd(4, 11);
+    // Where the sweep starts, and how many octaves it climbs.
+    const base = rnd(90, 260) * (accent ? rnd(1.1, 1.6) : 1);
+    const octaves = accent ? rnd(3, 4.6) : rnd(1.6, 3.4);
+    // How fast it falls back — short is a blip, long is a wow.
+    const sweep = rnd(0.09, 0.42);
+    const dur = rnd(0.06, 0.22);
+    const release = rnd(0.03, 0.14);
+
+    const s = new Tone.MonoSynth({
+      // Bass carries far more energy than the other voices at the same
+      // nominal level; measured against MACHINE rather than set by ear.
+      volume: -11,
+      oscillator: { type: pick(['sawtooth', 'square']) } as never,
+      filter: { type: 'lowpass', rolloff: -24, Q: q },
+      envelope: {
+        attack: 0.002,
+        decay: rnd(0.05, 0.3),
+        sustain: accent ? rnd(0.25, 0.5) : rnd(0.05, 0.25),
+        release,
+      },
+      filterEnvelope: {
+        attack: rnd(0.002, 0.014),
+        decay: sweep,
+        sustain: rnd(0.02, 0.22),
+        release: rnd(0.05, 0.25),
+        baseFrequency: base,
+        octaves,
+        exponent: 2,
+      },
+      detune: rnd(-6, 6),
+    });
+    s.triggerAttackRelease(freq / 4, dur, time, accent ? 1 : vel * 0.85);
+    this.live('acid', s, time, dur + release + 0.5);
   }
 
   // ----------------------------------------------------------- RHODES -----

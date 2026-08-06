@@ -160,6 +160,20 @@
       <div class="home" aria-hidden="true"></div>
     </div>
 
+    <div id="sheet-back" class="sheet-back" hidden></div>
+    <div
+      id="voice-sheet"
+      class="sheet"
+      role="dialog"
+      aria-label="Sound"
+      aria-modal="true"
+      hidden
+    >
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <h2 class="sheet-title">Sound</h2>
+      <div id="voice-list" class="sheet-list"></div>
+    </div>
+
     <script>
       // Surface any startup error on screen (mobile has no console).
       window.__bootErr = function (m) {

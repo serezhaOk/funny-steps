@@ -37,9 +37,11 @@ const synths = new Synths();
 // The sound cycle: the generative synths first, then the sample pack.
 type Voice =
   | { kind: 'sample'; def: SampleDef }
-  | { kind: 'synth'; id: SynthId; label: string };
+  | { kind: 'synth'; id: SynthId; label: string; hint: string };
 const VOICES: Voice[] = [
-  ...SYNTHS.map((s): Voice => ({ kind: 'synth', id: s.id, label: s.label })),
+  ...SYNTHS.map(
+    (s): Voice => ({ kind: 'synth', id: s.id, label: s.label, hint: s.hint })
+  ),
   ...SAMPLES.map((def): Voice => ({ kind: 'sample', def })),
 ];
 const voiceLabel = (v: Voice) => (v.kind === 'synth' ? v.label : v.def.label);
@@ -777,19 +779,52 @@ function wire(): void {
     track().grid.random();
     touch();
   });
-  $('#sample').addEventListener('click', cycleVoice);
+  $('#sample').addEventListener('click', openVoiceSheet);
+  $('#sheet-back').addEventListener('click', closeVoiceSheet);
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeVoiceSheet();
+  });
 
   window.addEventListener('resize', positionMixerUI);
 }
 
-async function cycleVoice(): Promise<void> {
+// ---------------------------------------------------------- sound sheet ---
+const voiceHint = (v: Voice) => (v.kind === 'synth' ? v.hint : 'Sample');
+
+function openVoiceSheet(): void {
+  const list = $('#voice-list');
+  list.innerHTML = '';
+  VOICES.forEach((v, i) => {
+    const b = document.createElement('button');
+    b.classList.toggle('on', i === track().voiceIdx);
+    b.innerHTML =
+      '<span class="voice"><span class="nm"></span><span class="hint"></span>' +
+      '</span><span class="material-symbols-outlined">check</span>';
+    b.querySelector<HTMLElement>('.nm')!.textContent = voiceLabel(v);
+    b.querySelector<HTMLElement>('.hint')!.textContent = voiceHint(v);
+    b.addEventListener('click', () => void pickVoice(i));
+    list.appendChild(b);
+  });
+  $('#sheet-back').hidden = false;
+  $('#voice-sheet').hidden = false;
+}
+
+function closeVoiceSheet(): void {
+  $('#sheet-back').hidden = true;
+  $('#voice-sheet').hidden = true;
+}
+
+async function pickVoice(idx: number): Promise<void> {
+  closeVoiceSheet();
   const t = track();
-  t.voiceIdx = (t.voiceIdx + 1) % VOICES.length;
+  if (t.voiceIdx === idx) return;
+  t.voiceIdx = idx;
   const el = $('#sample');
   el.classList.add('loading');
   refreshLabels();
+  refreshMixerUI();
   try {
-    const v = VOICES[t.voiceIdx];
+    const v = VOICES[idx];
     if (v.kind === 'synth') {
       await synths.init(audio.ctx, audio.output);
     } else {

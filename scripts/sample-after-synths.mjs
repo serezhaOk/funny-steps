@@ -26,8 +26,15 @@ await page.click('.p-empty, .p-card');
 await page.waitForSelector('#app:not([hidden])', { timeout: 10000 });
 await page.click('#rndm');
 
-for (let i = 0; i < 5; i++) {
+// Walk the whole sheet, ending on the last sound.
+await page.click('#sample');
+await page.waitForSelector('#voice-sheet:not([hidden])', { timeout: 5000 });
+const count = await page.$$eval('#voice-list button', (b) => b.length);
+await page.click('#sheet-back');
+for (let i = 0; i < count; i++) {
   await page.click('#sample');
+  await page.waitForSelector('#voice-sheet:not([hidden])', { timeout: 5000 });
+  await page.click(`#voice-list button:nth-child(${i + 1})`);
   await page.waitForFunction(
     () => !document.getElementById('sample').classList.contains('loading'),
     { timeout: 15000 }
