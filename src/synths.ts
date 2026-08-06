@@ -60,7 +60,7 @@ const TONE_SETTINGS: Record<
   rhodes: { cutoff: [900, 6000], chorus: 0.6, delayWet: 0.18, reverbWet: [0.2, 0.42] },
   // The chain filter stays out of the way — on acid the sweep belongs to the
   // per-note filter, and the reverb stays dry so the bass keeps its edge.
-  acid: { cutoff: [6000, 12000], chorus: 0, delayWet: 0.22, reverbWet: [0.04, 0.16], drive: 0.28 },
+  acid: { cutoff: [6000, 12000], chorus: 0, delayWet: 0.22, reverbWet: [0.04, 0.16], drive: 0.08 },
   machine: { cutoff: [1200, 9000], chorus: 0.1, delayWet: 0.12, reverbWet: [0.06, 0.22] },
 };
 
@@ -127,7 +127,7 @@ export class Synths {
     // Overdrive sits after the filter, before the modulation — the way a
     // 303 runs into a pedal, so the resonance peak is what gets driven.
     if (s.drive) {
-      const drive = new Tone.Distortion({ distortion: s.drive, wet: 0.85 });
+      const drive = new Tone.Distortion({ distortion: s.drive, wet: 0.5 });
       filter.chain(drive, chorus, delay);
     } else {
       filter.chain(chorus, delay);
@@ -301,8 +301,9 @@ export class Synths {
 
     const s = new Tone.MonoSynth({
       // Bass carries far more energy than the other voices at the same
-      // nominal level; measured against MACHINE rather than set by ear.
-      volume: -11,
+      // nominal level, and it still read louder than the drums when matched
+      // on RMS — so it sits deliberately under them.
+      volume: -18,
       oscillator: { type: pick(['sawtooth', 'square']) } as never,
       filter: { type: 'lowpass', rolloff: -24, Q: q },
       envelope: {
