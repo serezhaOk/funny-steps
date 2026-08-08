@@ -53,15 +53,23 @@ const TONE_SETTINGS: Record<
     reverbWet: [number, number];
     /** Overdrive in the chain, 0 for none. The 303 wants some. */
     drive?: number;
+    /**
+     * Where the reverb send is rolled off from below. Low end smeared over
+     * seven seconds of tail is what turns a kick into mud, so only mids and
+     * highs are let into the reverb. The dry signal and the delay keep their
+     * bottom — the weight of the sound is not what needs the space.
+     */
+    sendHp: number;
   }
 > = {
-  reverie: { cutoff: [500, 5200], chorus: 0.5, delayWet: 0.28, reverbWet: [0.25, 0.55] },
-  kalimba: { cutoff: [700, 3400], chorus: 0.25, delayWet: 0.2, reverbWet: [0.2, 0.4] },
-  rhodes: { cutoff: [900, 6000], chorus: 0.6, delayWet: 0.18, reverbWet: [0.2, 0.42] },
+  reverie: { cutoff: [500, 5200], chorus: 0.5, delayWet: 0.28, reverbWet: [0.25, 0.55], sendHp: 200 },
+  kalimba: { cutoff: [700, 3400], chorus: 0.25, delayWet: 0.2, reverbWet: [0.2, 0.4], sendHp: 220 },
+  rhodes: { cutoff: [900, 6000], chorus: 0.6, delayWet: 0.18, reverbWet: [0.2, 0.42], sendHp: 220 },
   // The chain filter stays out of the way — on acid the sweep belongs to the
   // per-note filter, and the reverb stays dry so the bass keeps its edge.
-  acid: { cutoff: [6000, 12000], chorus: 0, delayWet: 0.22, reverbWet: [0.04, 0.16], drive: 0.08 },
-  machine: { cutoff: [1200, 9000], chorus: 0.1, delayWet: 0.12, reverbWet: [0.06, 0.22] },
+  acid: { cutoff: [6000, 12000], chorus: 0, delayWet: 0.22, reverbWet: [0.04, 0.16], drive: 0.08, sendHp: 320 },
+  // Drums get the firmest cut: the kick and the low toms stay bone dry.
+  machine: { cutoff: [1200, 9000], chorus: 0.1, delayWet: 0.12, reverbWet: [0.06, 0.22], sendHp: 380 },
 };
 
 /** One preset's own colouring: filter -> chorus -> delay, plus a reverb send. */
@@ -70,6 +78,8 @@ interface Chain {
   chorus: Tone.Chorus;
   delay: Tone.PingPongDelay;
   send: Tone.Gain;
+  /** Rolls the low end off the reverb send. */
+  sendHp: Tone.Filter;
   /** Echo spacing in steps, and what that came to in seconds. */
   division: number;
   echo: number;
@@ -132,11 +142,20 @@ export class Synths {
     } else {
       filter.chain(chorus, delay);
     }
+    // Steep, because the point is to keep the kick out of the tail rather
+    // than to shade it.
+    const sendHp = new Tone.Filter({
+      type: 'highpass',
+      frequency: s.sendHp,
+      rolloff: -24,
+      Q: 0.7,
+    });
+
     delay.connect(this.out); // dry
     delay.connect(send);
-    send.connect(this.reverb); // wet
+    send.chain(sendHp, this.reverb); // wet
 
-    const chain = { filter, chorus, delay, send, division: 0, echo: 0.32 };
+    const chain = { filter, chorus, delay, send, sendHp, division: 0, echo: 0.32 };
     this.chains.set(id, chain);
     return chain;
   }
